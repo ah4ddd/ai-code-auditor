@@ -1,0 +1,168 @@
+{
+  "sql_injection": {
+    "vulnerabilities": [
+      {
+        "line_number": 9,
+        "vulnerability_type": "SQL_INJECTION",
+        "severity": "HIGH",
+        "description": "Direct string concatenation in SQL query allows injection attacks",
+        "code_snippet": "query = \"SELECT * FROM users WHERE id = \" + str(user_id)",
+        "fix_suggestion": "Use parameterized queries: cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))",
+        "confidence": 0.95
+      }
+    ],
+    "summary": {
+      "total_vulnerabilities": 1,
+      "critical_count": 0,
+      "high_count": 1,
+      "medium_count": 0,
+      "low_count": 0
+    },
+    "metadata": {
+      "filename": "sql_injection.py",
+      "analyzed_at": 1758121260.8738163,
+      "code_length": 307,
+      "gemini_tokens_used": 814
+    }
+  },
+  "hardcoded_secrets": {
+    "vulnerabilities": [
+      {
+        "line_number": 5,
+        "vulnerability_type": "HARDCODED_SECRETS",
+        "severity": "CRITICAL",
+        "description": "Hardcoded API key in source code",
+        "code_snippet": "API_KEY = \"sk-abc123def456ghi789jkl012mno345\"",
+        "fix_suggestion": "Store API keys in environment variables or a secure configuration file.",
+        "confidence": 0.99
+      },
+      {
+        "line_number": 6,
+        "vulnerability_type": "HARDCODED_SECRETS",
+        "severity": "CRITICAL",
+        "description": "Hardcoded database password in source code",
+        "code_snippet": "DATABASE_PASSWORD = \"admin123\"",
+        "fix_suggestion": "Store database passwords in environment variables or a secure configuration file.",
+        "confidence": 0.99
+      }
+    ],
+    "summary": {
+      "total_vulnerabilities": 2,
+      "critical_count": 2,
+      "high_count": 0,
+      "medium_count": 0,
+      "low_count": 0
+    },
+    "metadata": {
+      "filename": "hardcoded_secrets.py",
+      "analyzed_at": 1758121265.629212,
+      "code_length": 364,
+      "gemini_tokens_used": 948
+    }
+  },
+  "command_injection": {
+    "vulnerabilities": [
+      {
+        "line_number": 8,
+        "vulnerability_type": "COMMAND_INJECTION",
+        "severity": "HIGH",
+        "description": "The `os.system` call uses unsanitized input `filename` in a shell command, allowing command injection. An attacker could inject arbitrary shell commands by crafting a malicious filename.",
+        "code_snippet": "os.system(command)",
+        "fix_suggestion": "Avoid using `os.system` with user-provided input. Use `subprocess.run` with proper argument escaping or a safer alternative that doesn't involve shell execution.",
+        "confidence": 0.95
+      },
+      {
+        "line_number": 11,
+        "vulnerability_type": "COMMAND_INJECTION",
+        "severity": "HIGH",
+        "description": "The `subprocess.call` call uses unsanitized input `filename` in a shell command, allowing command injection. The `shell=True` argument makes this particularly dangerous. An attacker could inject arbitrary shell commands by crafting a malicious filename.",
+        "code_snippet": "subprocess.call(f\"rm -rf /tmp/{filename}\", shell=True)",
+        "fix_suggestion": "Avoid using `shell=True` with user-provided input. Use `subprocess.run` with proper argument escaping or a safer alternative that doesn't involve shell execution.",
+        "confidence": 0.95
+      }
+    ],
+    "summary": {
+      "total_vulnerabilities": 2,
+      "critical_count": 0,
+      "high_count": 2,
+      "medium_count": 0,
+      "low_count": 0
+    },
+    "metadata": {
+      "filename": "command_injection.py",
+      "analyzed_at": 1758121272.1776347,
+      "code_length": 263,
+      "gemini_tokens_used": 986
+    }
+  },
+  "weak_crypto": {
+    "vulnerabilities": [
+      {
+        "line_number": 7,
+        "vulnerability_type": "WEAK_CRYPTO",
+        "severity": "HIGH",
+        "description": "MD5 is a weak hashing algorithm and susceptible to collision attacks. It should not be used for password hashing.",
+        "code_snippet": "return hashlib.md5(password.encode()).hexdigest()",
+        "fix_suggestion": "Use bcrypt, scrypt, or Argon2 for password hashing.",
+        "confidence": 0.95
+      },
+      {
+        "line_number": 13,
+        "vulnerability_type": "WEAK_RANDOM",
+        "severity": "MEDIUM",
+        "description": "Using `random.randint` to generate tokens is not cryptographically secure. The output is predictable.",
+        "code_snippet": "token += str(random.randint(0, 9))",
+        "fix_suggestion": "Use `secrets.token_hex` or `os.urandom` for generating cryptographically secure tokens.",
+        "confidence": 0.85
+      }
+    ],
+    "summary": {
+      "total_vulnerabilities": 2,
+      "critical_count": 0,
+      "high_count": 1,
+      "medium_count": 1,
+      "low_count": 0
+    },
+    "metadata": {
+      "filename": "weak_crypto.py",
+      "analyzed_at": 1758121279.789594,
+      "code_length": 334,
+      "gemini_tokens_used": 940
+    }
+  },
+  "insecure_deserialization": {
+    "vulnerabilities": [
+      {
+        "line_number": 7,
+        "vulnerability_type": "INSECURE_DESERIALIZATION",
+        "severity": "HIGH",
+        "description": "Using pickle.loads() to deserialize untrusted data can lead to arbitrary code execution.",
+        "code_snippet": "user_obj = pickle.loads(data)",
+        "fix_suggestion": "Avoid using pickle for untrusted data. Use a safer serialization format like JSON or Protobuf.",
+        "confidence": 0.95
+      },
+      {
+        "line_number": 12,
+        "vulnerability_type": "INSECURE_DESERIALIZATION",
+        "severity": "CRITICAL",
+        "description": "Using eval() on user-controlled input allows arbitrary code execution.",
+        "code_snippet": "config = eval(config_str)",
+        "fix_suggestion": "Never use eval() on user input. Use a safe configuration parsing library or a whitelist approach.",
+        "confidence": 0.99
+      }
+    ],
+    "summary": {
+      "total_vulnerabilities": 2,
+      "critical_count": 1,
+      "high_count": 1,
+      "medium_count": 0,
+      "low_count": 0
+    },
+    "metadata": {
+      "filename": "insecure_deserialization.py",
+      "analyzed_at": 1758121286.2127516,
+      "code_length": 284,
+      "gemini_tokens_used": 915
+    }
+  }
+}

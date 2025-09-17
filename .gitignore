@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# Virtual envs
+venv/
+.venv/
+env/
+ENV/
+
+# Backend secrets
+backend/.env
+backend/.env.local
+
+# dotenv / secrets
+.env
+.env.local
+.env.*.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+dist/
+build/
+
+# Frontend
+frontend/build/
+frontend/dist/
+
+# Logs / runtime
+logs/
+*.log
+*.sqlite3
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+/coverage/
+
+# Docker
+docker-compose.override.yml
+
+# Results / artifacts (optional)
+backend/tools/gemini_analysis_test_results.json
+backend/app/services/*.key
+
+# Misc
+*.pem
+*.key
+secrets.json
