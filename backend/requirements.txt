@@ -1,0 +1,8 @@
+fastapi==0.104.1
+uvicorn[standard]
+python-multipart
+requests
+jinja2
+pdfkit
+python-magic
+aiofiles

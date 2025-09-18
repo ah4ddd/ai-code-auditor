@@ -16,11 +16,11 @@ import asyncio
 from datetime import datetime
 import shutil
 
-from services.gemini_analyzer import GeminiSecurityAnalyzer
-from services.report_generator import ReportGenerator
-from parsers.code_parser import CodebaseParser
-from models.analysis import AnalysisResult, AnalysisStatus
-from utils.file_handler import FileHandler
+from app.services.gemini_analyzer import GeminiSecurityAnalyzer
+from app.services.report_generator import ReportGenerator
+from app.parsers.code_parser import CodebaseParser
+from app.models.analysis import AnalysisResult, AnalysisStatus
+from app.utils.file_handler import FileHandler
 
 app = FastAPI(
     title="AI Security Auditor",
