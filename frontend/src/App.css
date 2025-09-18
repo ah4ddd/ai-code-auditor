@@ -1,0 +1,190 @@
+.results-section {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 20px;
+  padding: 2rem;
+  margin-top: 2rem;
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.results-header h2 {
+  font-size: 2rem;
+  color: #111827;
+}
+
+.new-analysis-button {
+  background: #4c51bf;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.summary-cards {
+  margin-bottom: 2rem;
+}
+
+.summary-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.summary-card h3 {
+  margin-bottom: 1rem;
+  color: #111827;
+}
+
+.severity-breakdown {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+.severity-item {
+  text-align: center;
+  padding: 1rem;
+  border-radius: 8px;
+}
+
+.severity-item.critical { background: #fef2f2; color: #dc2626; }
+.severity-item.high { background: #fff7ed; color: #ea580c; }
+.severity-item.medium { background: #fffbeb; color: #d97706; }
+.severity-item.low { background: #f0fdf4; color: #16a34a; }
+
+.severity-item .count {
+  display: block;
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+}
+
+.detailed-results h3 {
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  color: #111827;
+}
+
+.file-result {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.file-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.file-header h4 {
+  font-family: 'Monaco', monospace;
+  color: #111827;
+}
+
+.issue-count {
+  background: #f3f4f6;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.vulnerability-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.vuln-header {
+  background: #f9fafb;
+  padding: 1rem;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.severity-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: white;
+}
+
+.vuln-type {
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.line-number {
+  background: #dcfce7;
+  color: #166534;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.vuln-content {
+  padding: 1.5rem;
+}
+
+.description {
+  margin-bottom: 1rem;
+  color: #374151;
+}
+
+.code-snippet {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.code-snippet pre {
+  background: #1f2937;
+  color: #f9fafb;
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: 'Monaco', monospace;
+  font-size: 0.85rem;
+}
+
+.fix-suggestion {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.fix-suggestion h5 {
+  color: #166534;
+  margin-bottom: 0.5rem;
+}
+
+.confidence-score {
+  text-align: right;
+  font-size: 0.85rem;
+  color: #6b7280;
+  margin-top: 1rem;
+}
