@@ -19,8 +19,48 @@ function App() {
         const file = files[0];
         if (!file) return;
 
-        // Validate file type
-        const validExtensions = ['.py', '.js', '.jsx', '.java', '.go', '.php', '.zip'];
+        // Validate file type - now supporting 40+ programming languages
+        const validExtensions = [
+            // Python
+            '.py', '.pyx', '.pyw',
+            // JavaScript/TypeScript
+            '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+            // Java
+            '.java',
+            // C/C++
+            '.c', '.cpp', '.cc', '.cxx', '.c++', '.h', '.hpp', '.hh', '.hxx',
+            // C#
+            '.cs', '.csx',
+            // Go
+            '.go',
+            // Rust
+            '.rs',
+            // PHP
+            '.php', '.php3', '.php4', '.php5', '.phtml',
+            // Ruby
+            '.rb', '.rbw', '.rake', '.gemspec',
+            // Swift
+            '.swift',
+            // Kotlin
+            '.kt', '.kts',
+            // Scala
+            '.scala', '.sc',
+            // Perl
+            '.pl', '.pm', '.perl',
+            // Shell scripts
+            '.sh', '.bash', '.zsh', '.fish', '.ps1',
+            // SQL
+            '.sql', '.psql', '.mysql',
+            // Web languages
+            '.html', '.htm', '.xml', '.jsp', '.asp', '.aspx',
+            // Other languages
+            '.r', '.R', '.m', '.lua', '.dart', '.vb', '.vbs',
+            '.f', '.f90', '.pas', '.ada', '.asm', '.s',
+            '.clj', '.ex', '.exs', '.erl', '.hrl', '.fs', '.fsx',
+            '.hs', '.ml', '.nim', '.jl', '.cr',
+            // Archives
+            '.zip'
+        ];
         const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
 
         if (!validExtensions.includes(fileExtension)) {
@@ -183,7 +223,7 @@ function App() {
                                     type="file"
                                     id="file-upload"
                                     className="file-input"
-                                    accept=".py,.js,.jsx,.java,.go,.php,.zip"
+                                    accept=".py,.pyx,.pyw,.js,.jsx,.ts,.tsx,.mjs,.cjs,.java,.c,.cpp,.cc,.cxx,.c++,.h,.hpp,.hh,.hxx,.cs,.csx,.go,.rs,.php,.php3,.php4,.php5,.phtml,.rb,.rbw,.rake,.gemspec,.swift,.kt,.kts,.scala,.sc,.pl,.pm,.perl,.sh,.bash,.zsh,.fish,.ps1,.sql,.psql,.mysql,.html,.htm,.xml,.jsp,.asp,.aspx,.r,.R,.m,.lua,.dart,.vb,.vbs,.f,.f90,.pas,.ada,.asm,.s,.clj,.ex,.exs,.erl,.hrl,.fs,.fsx,.hs,.ml,.nim,.jl,.cr,.zip"
                                     onChange={(e) => handleFileUpload(e.target.files)}
                                 />
 

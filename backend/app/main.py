@@ -15,12 +15,18 @@ from typing import List, Optional, Dict
 import asyncio
 from datetime import datetime
 import shutil
+from dotenv import load_dotenv
+import os
 
 from app.services.gemini_analyzer import GeminiSecurityAnalyzer
 from app.services.report_generator import ReportGenerator
 from app.parsers.code_parser import CodebaseParser
 from app.models.analysis import AnalysisResult, AnalysisStatus
 from app.utils.file_handler import FileHandler
+
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
 
 app = FastAPI(
     title="AI Security Auditor",
@@ -41,7 +47,7 @@ app.add_middleware(
 security = HTTPBearer()
 
 # Global instances
-analyzer = GeminiSecurityAnalyzer("AIzaSyA9iKMWOTIEKPegzKuRUqhKj0h7yWQzY4U")
+analyzer = GeminiSecurityAnalyzer(GEMINI_API_KEY)
 report_gen = ReportGenerator()
 parser = CodebaseParser()
 file_handler = FileHandler()
