@@ -4,184 +4,7 @@ import zipfile
 from typing import List, Dict, Optional
 
 class FileHandler:
-    """Enhanced file handler supporting multiple programming languages"""
-
-    # Comprehensive language support with file extensions
-    SUPPORTED_EXTENSIONS = {
-        # Python
-        '.py': 'python',
-        '.pyx': 'python',
-        '.pyw': 'python',
-
-        # JavaScript/TypeScript
-        '.js': 'javascript',
-        '.jsx': 'javascript',
-        '.ts': 'typescript',
-        '.tsx': 'typescript',
-        '.mjs': 'javascript',
-        '.cjs': 'javascript',
-
-        # Java
-        '.java': 'java',
-        '.class': 'java',
-        '.jar': 'java',
-
-        # C/C++
-        '.c': 'c',
-        '.cpp': 'cpp',
-        '.cc': 'cpp',
-        '.cxx': 'cpp',
-        '.c++': 'cpp',
-        '.h': 'c',
-        '.hpp': 'cpp',
-        '.hh': 'cpp',
-        '.hxx': 'cpp',
-
-        # C#
-        '.cs': 'csharp',
-        '.csx': 'csharp',
-
-        # Go
-        '.go': 'go',
-
-        # Rust
-        '.rs': 'rust',
-
-        # PHP
-        '.php': 'php',
-        '.php3': 'php',
-        '.php4': 'php',
-        '.php5': 'php',
-        '.phtml': 'php',
-
-        # Ruby
-        '.rb': 'ruby',
-        '.rbw': 'ruby',
-        '.rake': 'ruby',
-        '.gemspec': 'ruby',
-
-        # Swift
-        '.swift': 'swift',
-
-        # Kotlin
-        '.kt': 'kotlin',
-        '.kts': 'kotlin',
-
-        # Scala
-        '.scala': 'scala',
-        '.sc': 'scala',
-
-        # Perl
-        '.pl': 'perl',
-        '.pm': 'perl',
-        '.perl': 'perl',
-
-        # Shell scripts
-        '.sh': 'bash',
-        '.bash': 'bash',
-        '.zsh': 'zsh',
-        '.fish': 'fish',
-        '.ps1': 'powershell',
-
-        # SQL
-        '.sql': 'sql',
-        '.psql': 'postgresql',
-        '.mysql': 'mysql',
-
-        # Web languages
-        '.html': 'html',
-        '.htm': 'html',
-        '.xml': 'xml',
-        '.jsp': 'jsp',
-        '.asp': 'asp',
-        '.aspx': 'aspx',
-
-        # Other languages
-        '.r': 'r',
-        '.R': 'r',
-        '.m': 'matlab',
-        '.lua': 'lua',
-        '.dart': 'dart',
-        '.vb': 'vbnet',
-        '.vbs': 'vbscript',
-        '.f': 'fortran',
-        '.f90': 'fortran',
-        '.pas': 'pascal',
-        '.ada': 'ada',
-        '.asm': 'assembly',
-        '.s': 'assembly',
-        '.clj': 'clojure',
-        '.ex': 'elixir',
-        '.exs': 'elixir',
-        '.erl': 'erlang',
-        '.hrl': 'erlang',
-        '.fs': 'fsharp',
-        '.fsx': 'fsharp',
-        '.hs': 'haskell',
-        '.ml': 'ocaml',
-        '.nim': 'nim',
-        '.jl': 'julia',
-        '.cr': 'crystal'
-    }
-
-    # Language-specific vulnerability patterns
-    LANGUAGE_VULNERABILITIES = {
-        'python': [
-            'SQL_INJECTION', 'XSS', 'HARDCODED_SECRETS', 'WEAK_CRYPTO',
-            'INSECURE_DESERIALIZATION', 'COMMAND_INJECTION', 'PATH_TRAVERSAL',
-            'WEAK_RANDOM', 'INSECURE_AUTH', 'INSUFFICIENT_LOGGING'
-        ],
-        'javascript': [
-            'XSS', 'SQL_INJECTION', 'HARDCODED_SECRETS', 'PROTOTYPE_POLLUTION',
-            'UNSAFE_EVAL', 'INSECURE_RANDOMNESS', 'WEAK_CRYPTO', 'DOM_XSS',
-            'COMMAND_INJECTION', 'PATH_TRAVERSAL'
-        ],
-        'java': [
-            'SQL_INJECTION', 'XSS', 'INSECURE_DESERIALIZATION', 'XXE',
-            'HARDCODED_SECRETS', 'WEAK_CRYPTO', 'PATH_TRAVERSAL',
-            'LDAP_INJECTION', 'COMMAND_INJECTION', 'INSECURE_RANDOM'
-        ],
-        'c': [
-            'BUFFER_OVERFLOW', 'FORMAT_STRING', 'USE_AFTER_FREE', 'DOUBLE_FREE',
-            'NULL_POINTER_DEREFERENCE', 'INTEGER_OVERFLOW', 'RACE_CONDITION',
-            'COMMAND_INJECTION', 'PATH_TRAVERSAL', 'HARDCODED_SECRETS'
-        ],
-        'cpp': [
-            'BUFFER_OVERFLOW', 'USE_AFTER_FREE', 'MEMORY_LEAK', 'DOUBLE_FREE',
-            'INTEGER_OVERFLOW', 'RACE_CONDITION', 'WEAK_CRYPTO',
-            'HARDCODED_SECRETS', 'COMMAND_INJECTION', 'PATH_TRAVERSAL'
-        ],
-        'csharp': [
-            'SQL_INJECTION', 'XSS', 'INSECURE_DESERIALIZATION', 'XXE',
-            'HARDCODED_SECRETS', 'WEAK_CRYPTO', 'PATH_TRAVERSAL',
-            'LDAP_INJECTION', 'COMMAND_INJECTION', 'INSECURE_RANDOM'
-        ],
-        'go': [
-            'SQL_INJECTION', 'XSS', 'HARDCODED_SECRETS', 'WEAK_CRYPTO',
-            'COMMAND_INJECTION', 'PATH_TRAVERSAL', 'RACE_CONDITION',
-            'INSECURE_RANDOM', 'BUFFER_OVERFLOW', 'FORMAT_STRING'
-        ],
-        'php': [
-            'SQL_INJECTION', 'XSS', 'LFI', 'RFI', 'COMMAND_INJECTION',
-            'HARDCODED_SECRETS', 'WEAK_CRYPTO', 'INSECURE_DESERIALIZATION',
-            'PATH_TRAVERSAL', 'WEAK_SESSION_MANAGEMENT'
-        ],
-        'ruby': [
-            'SQL_INJECTION', 'XSS', 'COMMAND_INJECTION', 'YAML_DESERIALIZATION',
-            'HARDCODED_SECRETS', 'WEAK_CRYPTO', 'PATH_TRAVERSAL',
-            'MASS_ASSIGNMENT', 'INSECURE_RANDOM', 'OPEN_REDIRECT'
-        ],
-        'rust': [
-            'UNSAFE_CODE', 'INTEGER_OVERFLOW', 'HARDCODED_SECRETS',
-            'WEAK_CRYPTO', 'COMMAND_INJECTION', 'PATH_TRAVERSAL',
-            'INSECURE_RANDOM', 'BUFFER_OVERFLOW', 'RACE_CONDITION'
-        ],
-        'swift': [
-            'SQL_INJECTION', 'XSS', 'HARDCODED_SECRETS', 'WEAK_CRYPTO',
-            'INSECURE_RANDOM', 'PATH_TRAVERSAL', 'MEMORY_CORRUPTION',
-            'INSECURE_NETWORKING', 'KEYCHAIN_MISUSE', 'BIOMETRIC_BYPASS'
-        ]
-    }
+    """Universal file handler - analyzes ANY text-based file"""
 
     # Files and directories to ignore during analysis
     IGNORE_PATTERNS = {
@@ -190,13 +13,22 @@ class FileHandler:
         '.mypy_cache/', '.coverage', '*.pyc', '*.pyo', '*.class',
         '*.jar', '*.war', '*.min.js', '*.bundle.js', 'vendor/',
         'third_party/', 'external/', '.nuget/', 'packages/',
-        'bower_components/', 'jspm_packages/', '.cargo/', 'Pods/'
+        'bower_components/', 'jspm_packages/', '.cargo/', 'Pods/',
+        '*.exe', '*.dll', '*.so', '*.dylib', '*.bin', '*.obj'
+    }
+
+    # Binary file extensions to definitely skip
+    BINARY_EXTENSIONS = {
+        '.exe', '.dll', '.so', '.dylib', '.bin', '.obj', '.o', '.a', '.lib',
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.ico', '.svg',
+        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'  # Archives handled separately
     }
 
     def extract_and_validate_zip(self, zip_path: str, extract_dir: str) -> List[str]:
         """
-        Extract ZIP file and return list of supported code files
-        Enhanced with better language detection and filtering
+        Extract ZIP file and return list of ALL text files (no restrictions)
         """
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -207,45 +39,43 @@ class FileHandler:
                 # Extract all files
                 zip_ref.extractall(extract_dir)
 
-            # Find supported code files
-            code_files = self._find_code_files(extract_dir)
+            # Find ALL text files (no language restrictions)
+            text_files = self._find_text_files(extract_dir)
 
-            # Validate file count (increased limit for enterprise use)
-            if len(code_files) > 500:
-                raise ValueError("Too many files to analyze. Maximum: 500 files")
+            # Only limit by file count for performance
+            if len(text_files) > 1000:
+                raise ValueError("Too many files to analyze. Maximum: 1000 files")
 
-            return code_files
+            return text_files
 
         except zipfile.BadZipFile:
             raise ValueError("Invalid ZIP file")
         except Exception as e:
             raise ValueError(f"Failed to extract ZIP: {str(e)}")
 
-    def _find_code_files(self, directory: str) -> List[str]:
-        """Recursively find all supported code files with enhanced filtering"""
-        code_files = []
+    def _find_text_files(self, directory: str) -> List[str]:
+        """Find ALL text files with NO language restrictions"""
+        text_files = []
         total_size = 0
-        max_total_size = 100 * 1024 * 1024  # 100MB total limit
+        max_total_size = 200 * 1024 * 1024  # 200MB total limit
 
         for root, dirs, files in os.walk(directory):
             # Skip ignored directories
-            dirs[:] = [d for d in dirs if not self._should_ignore(d + '/')]
+            dirs[:] = [d for d in dirs if not self._should_ignore_directory(d)]
 
             for file in files:
-                if self._should_ignore(file):
+                if self._should_ignore_file(file):
                     continue
 
                 file_path = os.path.join(root, file)
 
-                # Check if file extension is supported
-                language = self.get_file_language(file)
-                if not language:
-                    continue
-
-                # Check file size (max 5MB per file for large enterprise files)
+                # Check file size (max 20MB per file)
                 try:
                     file_size = os.path.getsize(file_path)
-                    if file_size > 5 * 1024 * 1024:  # 5MB limit per file
+                    if file_size > 20 * 1024 * 1024:  # 20MB limit per file
+                        continue
+
+                    if file_size == 0:  # Skip empty files
                         continue
 
                     total_size += file_size
@@ -255,182 +85,324 @@ class FileHandler:
                 except OSError:
                     continue
 
-                # Validate it's a text file
+                # Check if it's a text file (this is the key - no language restrictions)
                 if self._is_text_file(file_path):
-                    code_files.append(file_path)
+                    text_files.append(file_path)
 
-        return sorted(code_files)
+        return sorted(text_files)
 
-    def _should_ignore(self, path: str) -> bool:
-        """Enhanced ignore patterns for better filtering"""
-        path_lower = path.lower()
+    def _should_ignore_directory(self, dirname: str) -> bool:
+        """Check if directory should be ignored"""
+        dirname_lower = dirname.lower()
 
-        # Check ignore patterns
-        for pattern in self.IGNORE_PATTERNS:
-            if pattern.endswith('/'):
-                # Directory pattern
-                if pattern.rstrip('/') in path_lower:
-                    return True
-            elif pattern.startswith('*.'):
-                # File extension pattern
-                if path_lower.endswith(pattern[1:]):
-                    return True
-            else:
-                # Exact match or substring pattern
-                if pattern in path_lower:
-                    return True
+        ignore_dirs = [
+            '.git', '__pycache__', 'node_modules', '.vscode', '.idea',
+            'venv', 'env', 'build', 'dist', 'target', '.pytest_cache',
+            '.mypy_cache', 'vendor', 'third_party', 'external', 'packages',
+            'bower_components', 'jspm_packages', '.cargo', 'pods'
+        ]
 
-        # Ignore hidden files and temporary files
-        filename = os.path.basename(path_lower)
-        if filename.startswith('.') and filename not in ['.htaccess', '.env']:
+        return dirname_lower in ignore_dirs
+
+    def _should_ignore_file(self, filename: str) -> bool:
+        """Check if file should be ignored (only ignores truly binary/useless files)"""
+        filename_lower = filename.lower()
+
+        # Skip hidden files (except some useful ones)
+        if filename_lower.startswith('.') and filename_lower not in ['.env', '.htaccess', '.gitignore', '.dockerignore']:
             return True
 
-        # Ignore backup and temporary files
-        if any(filename.endswith(suffix) for suffix in ['.bak', '.tmp', '.temp', '.swp', '~']):
+        # Skip backup and temporary files
+        if any(filename_lower.endswith(suffix) for suffix in ['.bak', '.tmp', '.temp', '.swp', '~', '.log']):
             return True
 
-        # Ignore very large files by name patterns
-        if any(pattern in filename for pattern in ['minified', 'compressed', 'bundled']):
+        # Skip compiled/binary files by extension
+        _, ext = os.path.splitext(filename_lower)
+        if ext in self.BINARY_EXTENSIONS:
+            return True
+
+        # Skip very specific patterns that are definitely not code
+        skip_patterns = ['package-lock.json', 'yarn.lock', '.min.', '.bundle.']
+        if any(pattern in filename_lower for pattern in skip_patterns):
             return True
 
         return False
 
     def _is_text_file(self, file_path: str) -> bool:
-        """Enhanced text file detection with better encoding support"""
+        """
+        Universal text file detection - accepts ANYTHING that's readable as text
+        No language restrictions whatsoever
+        """
         try:
-            # Try multiple encodings
-            encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252']
+            # Try multiple encodings to read the file
+            encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252', 'ascii']
 
             for encoding in encodings:
                 try:
                     with open(file_path, 'r', encoding=encoding) as f:
-                        # Read first 1KB to check if it's text
-                        sample = f.read(1024)
+                        # Read first 4KB to check if it's text
+                        sample = f.read(4096)
 
-                        # Check for binary indicators
-                        if '\x00' in sample:  # Null bytes indicate binary
-                            return False
+                        # If we can read it and it has some content, consider it text
+                        if len(sample.strip()) > 0:
+                            # Very liberal check - if it's mostly printable, it's text
+                            printable_chars = sum(1 for c in sample if c.isprintable() or c.isspace())
 
-                        # Check if mostly printable characters
-                        printable_chars = sum(1 for c in sample if c.isprintable() or c.isspace())
-                        if len(sample) > 0 and printable_chars / len(sample) > 0.95:
-                            return True
+                            # Accept if more than 70% printable (very permissive)
+                            if len(sample) > 0 and printable_chars / len(sample) > 0.7:
+                                return True
 
-                except UnicodeDecodeError:
+                except (UnicodeDecodeError, UnicodeError):
                     continue
 
             return False
 
-        except (IOError, OSError):
+        except (IOError, OSError, PermissionError):
             return False
 
-    def get_file_language(self, filename: str) -> Optional[str]:
-        """Enhanced language detection with fallback mechanisms"""
-        # Primary detection by extension
+    def get_file_language(self, filename: str) -> str:
+        """
+        Universal language detection - returns a language or 'unknown'
+        NEVER returns None, always allows analysis
+        """
+        if not filename:
+            return 'text'
+
+        # Get extension
         _, ext = os.path.splitext(filename.lower())
-        language = self.SUPPORTED_EXTENSIONS.get(ext)
-
-        if language:
-            return language
-
-        # Fallback detection by filename patterns
         filename_lower = filename.lower()
 
-        # Special files without extensions
+        # Comprehensive language mapping
+        language_map = {
+            # Popular languages
+            '.py': 'python', '.pyx': 'python', '.pyw': 'python', '.pyi': 'python',
+            '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+            '.ts': 'typescript', '.tsx': 'typescript',
+            '.java': 'java', '.jsp': 'java', '.jspx': 'java',
+            '.kt': 'kotlin', '.kts': 'kotlin',
+            '.scala': 'scala', '.sc': 'scala',
+            '.clj': 'clojure', '.cljs': 'clojure',
+            '.groovy': 'groovy', '.gradle': 'groovy',
+
+            # C/C++
+            '.c': 'c', '.h': 'c',
+            '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.c++': 'cpp',
+            '.hpp': 'cpp', '.hh': 'cpp', '.hxx': 'cpp', '.h++': 'cpp',
+
+            # .NET
+            '.cs': 'csharp', '.csx': 'csharp',
+            '.vb': 'vbnet', '.vbs': 'vbscript',
+            '.fs': 'fsharp', '.fsx': 'fsharp',
+
+            # Systems languages
+            '.go': 'go',
+            '.rs': 'rust',
+            '.zig': 'zig',
+            '.nim': 'nim',
+            '.d': 'd',
+            '.carbon': 'carbon',
+
+            # Mobile
+            '.swift': 'swift',
+            '.dart': 'dart',
+            '.m': 'objectivec', '.mm': 'objectivec',
+
+            # Web languages
+            '.php': 'php', '.phtml': 'php', '.php3': 'php', '.php4': 'php', '.php5': 'php', '.php7': 'php', '.php8': 'php',
+            '.rb': 'ruby', '.rbw': 'ruby', '.rake': 'ruby', '.gemspec': 'ruby', '.erb': 'ruby',
+            '.pl': 'perl', '.pm': 'perl', '.perl': 'perl',
+            '.py3': 'python', '.pyw3': 'python',
+
+            # Functional languages
+            '.hs': 'haskell', '.lhs': 'haskell',
+            '.ml': 'ocaml', '.mli': 'ocaml',
+            '.elm': 'elm',
+            '.ex': 'elixir', '.exs': 'elixir',
+            '.erl': 'erlang', '.hrl': 'erlang',
+            '.lisp': 'lisp', '.lsp': 'lisp',
+            '.scheme': 'scheme', '.scm': 'scheme',
+            '.clj': 'clojure', '.cljs': 'clojure',
+
+            # Scripting
+            '.r': 'r', '.R': 'r', '.rmd': 'r', '.Rmd': 'r',
+            '.lua': 'lua',
+            '.tcl': 'tcl',
+            '.jl': 'julia',
+            '.cr': 'crystal',
+            '.odin': 'odin',
+
+            # Shell scripts
+            '.sh': 'bash', '.bash': 'bash',
+            '.zsh': 'zsh', '.fish': 'fish',
+            '.csh': 'csh', '.tcsh': 'tcsh', '.ksh': 'ksh',
+            '.ps1': 'powershell', '.psm1': 'powershell', '.psd1': 'powershell',
+            '.bat': 'batch', '.cmd': 'batch',
+
+            # Database
+            '.sql': 'sql', '.psql': 'postgresql', '.mysql': 'mysql',
+            '.sqlite': 'sqlite', '.pgsql': 'postgresql', '.plsql': 'plsql',
+
+            # Web markup/styling
+            '.html': 'html', '.htm': 'html', '.xhtml': 'html',
+            '.xml': 'xml', '.xsl': 'xml', '.xslt': 'xml',
+            '.css': 'css', '.scss': 'scss', '.sass': 'sass', '.less': 'less',
+            '.vue': 'vue', '.svelte': 'svelte', '.astro': 'astro',
+
+            # Assembly
+            '.asm': 'assembly', '.s': 'assembly', '.S': 'assembly',
+            '.nasm': 'assembly', '.masm': 'assembly',
+
+            # Scientific/Engineering
+            '.f': 'fortran', '.f77': 'fortran', '.f90': 'fortran', '.f95': 'fortran',
+            '.f03': 'fortran', '.f08': 'fortran', '.for': 'fortran',
+            '.pas': 'pascal', '.pp': 'pascal', '.inc': 'pascal',
+            '.ada': 'ada', '.adb': 'ada', '.ads': 'ada',
+            '.cob': 'cobol', '.cbl': 'cobol',
+            '.pro': 'prolog', '.pl': 'prolog',  # Note: .pl could be Perl or Prolog
+
+            # Modern/Emerging languages
+            '.sol': 'solidity',
+            '.move': 'move',
+            '.cairo': 'cairo',
+            '.yul': 'yul',
+            '.vyper': 'vyper',
+            '.fe': 'fe',
+            '.pony': 'pony',
+            '.red': 'red',
+            '.factor': 'factor',
+
+            # DevOps/Config
+            '.tf': 'terraform', '.tfvars': 'terraform',
+            '.hcl': 'hcl',
+            '.yaml': 'yaml', '.yml': 'yaml',
+            '.toml': 'toml',
+            '.ini': 'ini', '.cfg': 'ini', '.conf': 'ini',
+            '.json': 'json', '.jsonc': 'json',
+            '.proto': 'protobuf',
+            '.thrift': 'thrift',
+            '.avro': 'avro',
+
+            # Other text formats that could contain code
+            '.md': 'markdown', '.markdown': 'markdown',
+            '.rst': 'restructuredtext',
+            '.tex': 'latex', '.cls': 'latex', '.sty': 'latex',
+            '.bib': 'bibtex',
+            '.org': 'org-mode',
+
+            # Jupyter/Data Science
+            '.ipynb': 'jupyter',
+            '.rmd': 'rmarkdown',
+            '.qmd': 'quarto',
+
+            # Game Development
+            '.gd': 'gdscript',
+            '.cs': 'unity-csharp',  # Could be regular C# too
+            '.hlsl': 'hlsl', '.glsl': 'glsl',
+            '.shader': 'shader',
+
+            # Query languages
+            '.sparql': 'sparql',
+            '.cypher': 'cypher',
+            '.gql': 'graphql', '.graphql': 'graphql'
+        }
+
+        # Check extension first
+        if ext in language_map:
+            return language_map[ext]
+
+        # Special filename detection (no extension files)
         special_files = {
-            'dockerfile': 'dockerfile',
-            'makefile': 'makefile',
-            'rakefile': 'ruby',
-            'gemfile': 'ruby',
-            'podfile': 'ruby',
-            'vagrantfile': 'ruby',
-            'gruntfile': 'javascript',
-            'gulpfile': 'javascript'
+            'dockerfile': 'dockerfile', 'containerfile': 'dockerfile',
+            'makefile': 'makefile', 'gnumakefile': 'makefile',
+            'cmakelists.txt': 'cmake', 'cmake': 'cmake',
+            'rakefile': 'ruby', 'gemfile': 'ruby', 'podfile': 'ruby',
+            'vagrantfile': 'ruby', 'guardfile': 'ruby',
+            'gruntfile.js': 'javascript', 'gulpfile.js': 'javascript',
+            'webpack.config.js': 'javascript', 'rollup.config.js': 'javascript',
+            'package.json': 'json', 'composer.json': 'json',
+            'requirements.txt': 'text', 'pipfile': 'toml',
+            'cargo.toml': 'toml', 'pyproject.toml': 'toml',
+            '.gitignore': 'gitignore', '.dockerignore': 'dockerignore',
+            '.env': 'env', '.env.local': 'env', '.env.example': 'env',
+            'readme': 'markdown', 'readme.md': 'markdown',
+            'license': 'text', 'changelog': 'text', 'authors': 'text',
+            'procfile': 'procfile', 'buildfile': 'text'
         }
 
         if filename_lower in special_files:
             return special_files[filename_lower]
 
-        # Check for shebang in shell scripts
-        if filename_lower.startswith('run') or filename_lower.startswith('install'):
-            return 'bash'
+        # If no extension, try to detect from filename patterns
+        if not ext:
+            if any(keyword in filename_lower for keyword in ['config', 'conf', 'settings']):
+                return 'config'
+            if any(keyword in filename_lower for keyword in ['script', 'run', 'start', 'install']):
+                return 'script'
+            if 'test' in filename_lower:
+                return 'test'
 
-        return None
-
-    def get_language_vulnerabilities(self, language: str) -> List[str]:
-        """Get vulnerability types specific to a programming language"""
-        return self.LANGUAGE_VULNERABILITIES.get(language, [
-            'HARDCODED_SECRETS', 'WEAK_CRYPTO', 'COMMAND_INJECTION',
-            'PATH_TRAVERSAL', 'INSECURE_RANDOM'
-        ])
+        # Default fallback - NEVER return None, always allow analysis
+        return 'text'
 
     def get_file_stats(self, file_path: str) -> Dict:
-        """Enhanced file statistics with language-specific metrics"""
+        """Get comprehensive file statistics"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            # Try multiple encodings
+            content = None
+            encoding_used = None
+
+            for encoding in ['utf-8', 'utf-16', 'latin-1', 'cp1252']:
+                try:
+                    with open(file_path, 'r', encoding=encoding) as f:
+                        content = f.read()
+                    encoding_used = encoding
+                    break
+                except (UnicodeDecodeError, UnicodeError):
+                    continue
+
+            if content is None:
+                return {
+                    'size_bytes': 0, 'line_count': 0, 'non_empty_lines': 0,
+                    'language': 'binary', 'has_content': False, 'encoding': 'unknown'
+                }
 
             lines = content.split('\n')
             language = self.get_file_language(os.path.basename(file_path))
 
-            stats = {
+            return {
                 'size_bytes': len(content),
                 'line_count': len(lines),
                 'non_empty_lines': len([line for line in lines if line.strip()]),
                 'language': language,
                 'has_content': len(content.strip()) > 0,
-                'comment_lines': self._count_comment_lines(content, language),
-                'vulnerability_types': self.get_language_vulnerabilities(language) if language else []
+                'encoding': encoding_used,
+                'char_count': len(content),
+                'word_count': len(content.split()) if content else 0
             }
-
-            return stats
 
         except Exception:
             return {
-                'size_bytes': 0,
-                'line_count': 0,
-                'non_empty_lines': 0,
-                'language': None,
-                'has_content': False,
-                'comment_lines': 0,
-                'vulnerability_types': []
+                'size_bytes': 0, 'line_count': 0, 'non_empty_lines': 0,
+                'language': 'error', 'has_content': False, 'encoding': 'error'
             }
 
-    def _count_comment_lines(self, content: str, language: str) -> int:
-        """Count comment lines based on language syntax"""
-        if not language:
-            return 0
+    def _is_text_file_by_name(self, filename: str) -> bool:
+        """
+        Quick check if file is likely text-based by extension
+        Very permissive - only blocks obviously binary files
+        """
+        if not filename:
+            return True
 
-        lines = content.split('\n')
-        comment_count = 0
+        _, ext = os.path.splitext(filename.lower())
 
-        # Language-specific comment patterns
-        single_line_comments = {
-            'python': ['#'],
-            'javascript': ['//'],
-            'typescript': ['//'],
-            'java': ['//'],
-            'c': ['//'],
-            'cpp': ['//'],
-            'csharp': ['//'],
-            'go': ['//'],
-            'rust': ['//'],
-            'swift': ['//'],
-            'kotlin': ['//'],
-            'scala': ['//'],
-            'php': ['//', '#'],
-            'ruby': ['#'],
-            'perl': ['#'],
-            'bash': ['#'],
-            'r': ['#'],
-            'sql': ['--']
+        # Only block clearly binary extensions
+        definitely_binary = {
+            '.exe', '.dll', '.so', '.dylib', '.bin', '.obj', '.o', '.a', '.lib',
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.ico',
+            '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg',
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
         }
 
-        comment_chars = single_line_comments.get(language, [])
-
-        for line in lines:
-            stripped = line.strip()
-            if any(stripped.startswith(char) for char in comment_chars):
-                comment_count += 1
-
-        return comment_count
+        # If it's not definitely binary, assume it's text
+        return ext not in definitely_binary

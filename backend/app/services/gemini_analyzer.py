@@ -1,19 +1,16 @@
+# backend/app/services/gemini_analyzer.py
+"""
+Enhanced AI Code Security Analyzer supporting multiple programming languages
+FIXED VERSION - Language-specific vulnerability detection with specialized prompts
+"""
+
 import json
 import requests
 import time
 import re
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-from dotenv import load_dotenv
-import os
-
-# Load env vars
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
-API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not API_KEY:
-    raise SystemExit("❌ No GEMINI_API_KEY found in .env")
 
 class Severity(Enum):
     CRITICAL = "CRITICAL"
@@ -23,55 +20,38 @@ class Severity(Enum):
     INFO = "INFO"
 
 class VulnerabilityType(Enum):
-    # Injection Attacks
+    # Web vulnerabilities
     SQL_INJECTION = "SQL_INJECTION"
     XSS = "XSS"
-    COMMAND_INJECTION = "COMMAND_INJECTION"
-    LDAP_INJECTION = "LDAP_INJECTION"
-    XPATH_INJECTION = "XPATH_INJECTION"
+    CSRF = "CSRF"
 
-    # Authentication & Authorization
-    INSECURE_AUTH = "INSECURE_AUTH"
-    WEAK_SESSION_MANAGEMENT = "WEAK_SESSION_MANAGEMENT"
-    BROKEN_ACCESS_CONTROL = "BROKEN_ACCESS_CONTROL"
-
-    # Cryptographic Issues
-    WEAK_CRYPTO = "WEAK_CRYPTO"
+    # Authentication/Authorization
     HARDCODED_SECRETS = "HARDCODED_SECRETS"
-    WEAK_RANDOM = "WEAK_RANDOM"
+    WEAK_CRYPTO = "WEAK_CRYPTO"
+    INSECURE_AUTH = "INSECURE_AUTH"
 
-    # Memory Issues (C/C++/Rust)
-    BUFFER_OVERFLOW = "BUFFER_OVERFLOW"
-    USE_AFTER_FREE = "USE_AFTER_FREE"
-    MEMORY_LEAK = "MEMORY_LEAK"
-    DOUBLE_FREE = "DOUBLE_FREE"
-    NULL_POINTER_DEREFERENCE = "NULL_POINTER_DEREFERENCE"
-    INTEGER_OVERFLOW = "INTEGER_OVERFLOW"
+    # Code injection
+    COMMAND_INJECTION = "COMMAND_INJECTION"
+    CODE_INJECTION = "CODE_INJECTION"
+    PATH_TRAVERSAL = "PATH_TRAVERSAL"
 
-    # Serialization Issues
+    # Deserialization
     INSECURE_DESERIALIZATION = "INSECURE_DESERIALIZATION"
     YAML_DESERIALIZATION = "YAML_DESERIALIZATION"
 
-    # File System Issues
-    PATH_TRAVERSAL = "PATH_TRAVERSAL"
-    LFI = "LFI"  # Local File Inclusion
-    RFI = "RFI"  # Remote File Inclusion
+    # Memory issues (C/C++)
+    BUFFER_OVERFLOW = "BUFFER_OVERFLOW"
+    USE_AFTER_FREE = "USE_AFTER_FREE"
+    DOUBLE_FREE = "DOUBLE_FREE"
+    MEMORY_LEAK = "MEMORY_LEAK"
+    NULL_POINTER_DEREFERENCE = "NULL_POINTER_DEREFERENCE"
 
-    # Web-Specific
-    DOM_XSS = "DOM_XSS"
-    PROTOTYPE_POLLUTION = "PROTOTYPE_POLLUTION"
-
-    # Language-Specific
-    UNSAFE_EVAL = "UNSAFE_EVAL"
-    UNSAFE_CODE = "UNSAFE_CODE"  # Rust unsafe blocks
-    MASS_ASSIGNMENT = "MASS_ASSIGNMENT"  # Ruby/Rails
-
-    # General Security
-    INSUFFICIENT_LOGGING = "INSUFFICIENT_LOGGING"
+    # Other security issues
+    WEAK_RANDOM = "WEAK_RANDOM"
     RACE_CONDITION = "RACE_CONDITION"
+    INTEGER_OVERFLOW = "INTEGER_OVERFLOW"
     FORMAT_STRING = "FORMAT_STRING"
-    XXE = "XXE"  # XML External Entity
-    OPEN_REDIRECT = "OPEN_REDIRECT"
+    INSUFFICIENT_LOGGING = "INSUFFICIENT_LOGGING"
 
 @dataclass
 class Vulnerability:
@@ -81,273 +61,260 @@ class Vulnerability:
     description: str
     code_snippet: str
     fix_suggestion: str
-    confidence: float  # 0.0 to 1.0
+    confidence: float
 
-class EnhancedGeminiSecurityAnalyzer:
+class GeminiSecurityAnalyzer:
+    """Enhanced security analyzer with multi-language support - FIXED VERSION"""
+
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-        # Language-specific security analysis prompts
-        self.language_prompts = self._build_language_prompts()
+        # Language-specific security prompts
+        self.language_prompts = self._initialize_language_prompts()
 
-    def _build_language_prompts(self) -> Dict[str, str]:
-        """Build language-specific security analysis prompts"""
+    def _initialize_language_prompts(self) -> Dict[str, str]:
+        """Initialize language-specific security analysis prompts"""
 
-        base_json_format = """{
+        base_instruction = """You are a world-class security expert and code auditor. Analyze the following {language} code for security vulnerabilities.
+
+CRITICAL: Return ONLY valid JSON in this exact format:
+{{
   "vulnerabilities": [
-    {
+    {{
       "line_number": 42,
       "vulnerability_type": "SQL_INJECTION",
       "severity": "HIGH",
       "description": "Direct string concatenation in SQL query allows injection attacks",
       "code_snippet": "query = 'SELECT * FROM users WHERE id = ' + user_id",
-      "fix_suggestion": "Use parameterized queries or prepared statements",
+      "fix_suggestion": "Use parameterized queries: cursor.execute('SELECT * FROM users WHERE id = %s', (user_id,))",
       "confidence": 0.95
-    }
+    }}
   ],
-  "summary": {
+  "summary": {{
     "total_vulnerabilities": 1,
     "critical_count": 0,
     "high_count": 1,
     "medium_count": 0,
-    "low_count": 0
-  }
-}"""
-
-        return {
-            'python': f"""You are a Python security expert. Analyze this Python code for security vulnerabilities.
-
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
-
-Python-specific vulnerabilities to look for:
-- SQL_INJECTION: Unsanitized input in SQL queries, string concatenation in queries
-- XSS: Unescaped output in web frameworks (Flask, Django)
-- HARDCODED_SECRETS: API keys, passwords, database credentials in code
-- WEAK_CRYPTO: MD5, SHA1, weak encryption algorithms
-- INSECURE_DESERIALIZATION: Unsafe pickle.loads(), eval(), exec() usage
-- COMMAND_INJECTION: os.system(), subprocess with shell=True and user input
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- WEAK_RANDOM: random module for security purposes (use secrets instead)
-- INSECURE_AUTH: Weak password hashing, plaintext passwords
-- INSUFFICIENT_LOGGING: Missing security event logging
+    "low_count": 0,
+    "info_count": 0
+  }}
+}}
 
 Severity levels:
 - CRITICAL: Immediate exploitation possible, data breach likely
 - HIGH: Easy to exploit, significant impact
 - MEDIUM: Requires some skill to exploit, moderate impact
 - LOW: Difficult to exploit or minor impact
+- INFO: Security best practice violations
 
-Be precise with line numbers. Only flag REAL vulnerabilities.""",
+Be precise with line numbers. Only flag REAL vulnerabilities with high confidence (>0.7), not theoretical ones."""
 
-            'javascript': f"""You are a JavaScript security expert. Analyze this JavaScript/Node.js code for security vulnerabilities.
+        return {
+            'python': base_instruction.format(language='Python') + """
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+Look specifically for these Python vulnerabilities:
+- SQL_INJECTION: String concatenation/formatting in SQL queries
+- XSS: Unescaped output in Flask/Django templates
+- HARDCODED_SECRETS: API keys, passwords, tokens in source
+- WEAK_CRYPTO: MD5, SHA1, DES usage for security
+- INSECURE_AUTH: Poor password handling, weak sessions
+- PATH_TRAVERSAL: Unchecked file paths in open(), os.path.join()
+- COMMAND_INJECTION: subprocess, os.system with user input
+- INSECURE_DESERIALIZATION: pickle.loads(), eval(), exec()
+- WEAK_RANDOM: random module for crypto purposes
+- INSUFFICIENT_LOGGING: Missing security event logs
 
-JavaScript-specific vulnerabilities to look for:
-- XSS: Unescaped user input in DOM manipulation, innerHTML usage
-- DOM_XSS: Client-side XSS in DOM manipulation
-- SQL_INJECTION: Unsanitized input in database queries (especially NoSQL)
-- PROTOTYPE_POLLUTION: Unsafe object merging, __proto__ manipulation
-- UNSAFE_EVAL: eval(), Function(), setTimeout/setInterval with strings
-- HARDCODED_SECRETS: API keys, tokens, passwords in client-side code
-- WEAK_CRYPTO: Weak random number generation, Math.random() for security
+Focus on high-confidence, exploitable vulnerabilities only.""",
+
+            'javascript': base_instruction.format(language='JavaScript') + """
+
+Look specifically for these JavaScript vulnerabilities:
+- XSS: innerHTML usage, document.write() with user data
+- SQL_INJECTION: Unsanitized database queries
+- HARDCODED_SECRETS: API keys in client-side code
+- PROTOTYPE_POLLUTION: Unsafe Object.assign usage
+- UNSAFE_EVAL: eval(), Function() with user input
+- INSECURE_RANDOMNESS: Math.random() for security
+- DOM_XSS: Unsafe DOM manipulation
 - COMMAND_INJECTION: child_process.exec() with user input
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- INSECURE_RANDOMNESS: Math.random() for security tokens
 
-Focus on both client-side and server-side (Node.js) security issues.""",
+Focus on client-side security issues and Node.js vulnerabilities.""",
 
-            'java': f"""You are a Java security expert. Analyze this Java code for security vulnerabilities.
+            'java': base_instruction.format(language='Java') + """
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+Look specifically for these Java vulnerabilities:
+- SQL_INJECTION: Statement vs PreparedStatement usage
+- XSS: Unescaped JSP/servlet output
+- INSECURE_DESERIALIZATION: ObjectInputStream.readObject()
+- XXE: XML parser vulnerabilities
+- HARDCODED_SECRETS: Credentials in source code
+- WEAK_CRYPTO: DES, MD5, SHA1 usage
+- COMMAND_INJECTION: Runtime.exec() with user input
+- LDAP_INJECTION: Unsanitized LDAP queries
 
-Java-specific vulnerabilities to look for:
-- SQL_INJECTION: JDBC queries with string concatenation
-- XSS: Unescaped output in JSP, servlets
-- INSECURE_DESERIALIZATION: ObjectInputStream.readObject() on untrusted data
-- XXE: XML parsing without disabling external entities
-- HARDCODED_SECRETS: API keys, passwords, database credentials
-- WEAK_CRYPTO: MD5, SHA1, DES, weak key sizes
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- LDAP_INJECTION: Unsanitized input in LDAP queries
-- COMMAND_INJECTION: Runtime.exec(), ProcessBuilder with user input
-- INSECURE_RANDOM: java.util.Random for security purposes (use SecureRandom)
+Focus on enterprise Java security patterns.""",
 
-Pay attention to Spring framework, Struts, and other common Java frameworks.""",
+            'c': base_instruction.format(language='C') + """
 
-            'c': f"""You are a C security expert. Analyze this C code for security vulnerabilities.
+Look specifically for these C vulnerabilities:
+- BUFFER_OVERFLOW: strcpy, strcat, gets, sprintf without bounds
+- FORMAT_STRING: printf with user-controlled format strings
+- USE_AFTER_FREE: Accessing freed memory
+- DOUBLE_FREE: Multiple free() calls
+- NULL_POINTER_DEREFERENCE: Dereferencing NULL pointers
+- INTEGER_OVERFLOW: Arithmetic without overflow checks
+- COMMAND_INJECTION: system() with user input
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+Focus on memory safety and injection vulnerabilities.""",
 
-C-specific vulnerabilities to look for:
-- BUFFER_OVERFLOW: strcpy, strcat, sprintf, gets usage without bounds checking
-- FORMAT_STRING: printf family functions with user-controlled format strings
-- USE_AFTER_FREE: Using freed memory pointers
-- DOUBLE_FREE: Calling free() twice on same pointer
-- NULL_POINTER_DEREFERENCE: Using NULL pointers without checking
-- INTEGER_OVERFLOW: Arithmetic operations without overflow checks
-- RACE_CONDITION: Shared memory access without proper synchronization
-- COMMAND_INJECTION: system(), popen() with user input
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- HARDCODED_SECRETS: Passwords, keys embedded in code
+            'cpp': base_instruction.format(language='C++') + """
 
-Focus on memory safety and bounds checking issues.""",
+Look specifically for these C++ vulnerabilities:
+- BUFFER_OVERFLOW: Unsafe string operations
+- USE_AFTER_FREE: Smart pointer misuse
+- MEMORY_LEAK: Missing delete, RAII violations
+- DOUBLE_FREE: Multiple delete calls
+- INTEGER_OVERFLOW: Arithmetic overflow issues
+- RACE_CONDITION: Thread safety problems
+- WEAK_CRYPTO: Deprecated crypto algorithms
 
-            'cpp': f"""You are a C++ security expert. Analyze this C++ code for security vulnerabilities.
+Focus on modern C++ security patterns.""",
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+            'csharp': base_instruction.format(language='C#') + """
 
-C++-specific vulnerabilities to look for:
-- BUFFER_OVERFLOW: Unsafe string operations, array bounds violations
-- USE_AFTER_FREE: Using deleted objects or freed memory
-- MEMORY_LEAK: Missing delete/delete[] calls, RAII violations
-- DOUBLE_FREE: Multiple delete calls on same object
-- INTEGER_OVERFLOW: Arithmetic operations without overflow checks
-- RACE_CONDITION: Shared resource access without proper synchronization
-- WEAK_CRYPTO: Weak cryptographic implementations
-- HARDCODED_SECRETS: Embedded credentials or keys
-- COMMAND_INJECTION: system() calls with user input
-- PATH_TRAVERSAL: File operations with unsanitized paths
+Look specifically for these C# vulnerabilities:
+- SQL_INJECTION: String concatenation in SQL
+- XSS: Unencoded web output
+- INSECURE_DESERIALIZATION: BinaryFormatter usage
+- XXE: XmlDocument without secure settings
+- HARDCODED_SECRETS: Connection strings in code
+- WEAK_CRYPTO: DES, MD5, SHA1 usage
+- COMMAND_INJECTION: Process.Start() with user input
 
-Consider modern C++ best practices and smart pointer usage.""",
+Focus on .NET security best practices.""",
 
-            'csharp': f"""You are a C# security expert. Analyze this C# code for security vulnerabilities.
+            'go': base_instruction.format(language='Go') + """
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
-
-C#-specific vulnerabilities to look for:
-- SQL_INJECTION: String concatenation in SQL queries
-- XSS: Unescaped output in ASP.NET applications
-- INSECURE_DESERIALIZATION: BinaryFormatter, unsafe JSON deserialization
-- XXE: XmlDocument, XmlReader without secure settings
-- HARDCODED_SECRETS: Connection strings, API keys in code
+Look specifically for these Go vulnerabilities:
+- SQL_INJECTION: String formatting in queries
+- XSS: Unescaped template output
+- HARDCODED_SECRETS: API keys in source
 - WEAK_CRYPTO: MD5, SHA1, DES usage
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- LDAP_INJECTION: DirectorySearcher with user input
-- COMMAND_INJECTION: Process.Start with user input
-- INSECURE_RANDOM: System.Random for security purposes
+- COMMAND_INJECTION: exec.Command() with user input
+- PATH_TRAVERSAL: File operations without cleaning
+- RACE_CONDITION: Goroutine sync issues
 
-Focus on .NET Framework and ASP.NET-specific issues.""",
+Focus on Go-specific security patterns.""",
 
-            'go': f"""You are a Go security expert. Analyze this Go code for security vulnerabilities.
+            'php': base_instruction.format(language='PHP') + """
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+Look specifically for these PHP vulnerabilities:
+- SQL_INJECTION: String concatenation vs PDO
+- XSS: Unescaped echo output
+- LFI: include/require with user input
+- RFI: Remote file inclusion
+- COMMAND_INJECTION: shell_exec(), system() with user data
+- HARDCODED_SECRETS: Database credentials
+- INSECURE_DESERIALIZATION: unserialize() with user input
 
-Go-specific vulnerabilities to look for:
-- SQL_INJECTION: String concatenation in database queries
-- XSS: Unescaped template output, unsafe HTML generation
-- HARDCODED_SECRETS: API keys, passwords in source code
-- WEAK_CRYPTO: MD5, SHA1, weak ciphers usage
-- COMMAND_INJECTION: exec.Command with user input
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- RACE_CONDITION: Shared memory access without proper goroutine synchronization
-- INSECURE_RANDOM: math/rand for security purposes (use crypto/rand)
-- BUFFER_OVERFLOW: unsafe package usage
-- FORMAT_STRING: fmt.Printf with user-controlled format strings
+Focus on common PHP web vulnerabilities.""",
 
-Consider Go-specific concurrency issues with goroutines.""",
+            'ruby': base_instruction.format(language='Ruby') + """
 
-            'php': f"""You are a PHP security expert. Analyze this PHP code for security vulnerabilities.
+Look specifically for these Ruby vulnerabilities:
+- SQL_INJECTION: String interpolation in ActiveRecord
+- XSS: Raw output in ERB templates
+- COMMAND_INJECTION: system(), backticks with user input
+- YAML_DESERIALIZATION: YAML.load() vs YAML.safe_load()
+- HARDCODED_SECRETS: API keys, passwords
+- MASS_ASSIGNMENT: Unfiltered params
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+Focus on Rails security patterns.""",
 
-PHP-specific vulnerabilities to look for:
-- SQL_INJECTION: String concatenation in MySQL queries, no prepared statements
-- XSS: Unescaped echo/print output, missing htmlspecialchars
-- LFI: include/require with user input, file_get_contents with user paths
-- RFI: Remote file inclusion in include/require statements
-- COMMAND_INJECTION: shell_exec, system, exec with user input
-- HARDCODED_SECRETS: Database passwords, API keys in code
-- WEAK_CRYPTO: MD5, SHA1 for password hashing
-- INSECURE_DESERIALIZATION: unserialize() on user data
-- PATH_TRAVERSAL: File operations with unsanitized $_GET/$_POST data
-- WEAK_SESSION_MANAGEMENT: session_start() without proper configuration
+            'rust': base_instruction.format(language='Rust') + """
 
-Focus on common PHP web application vulnerabilities.""",
+Look specifically for these Rust vulnerabilities:
+- UNSAFE_CODE: Unsafe blocks without proper validation
+- INTEGER_OVERFLOW: Arithmetic without overflow checks
+- HARDCODED_SECRETS: API keys in source
+- WEAK_CRYPTO: Weak algorithms
+- COMMAND_INJECTION: Command::new() with user input
+- RACE_CONDITION: Arc/Mutex misuse
 
-            'ruby': f"""You are a Ruby security expert. Analyze this Ruby code for security vulnerabilities.
+Focus on unsafe Rust patterns.""",
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+            'swift': base_instruction.format(language='Swift') + """
 
-Ruby-specific vulnerabilities to look for:
-- SQL_INJECTION: String interpolation in ActiveRecord queries
-- XSS: Unescaped output in ERB templates, raw HTML output
-- COMMAND_INJECTION: system, backticks, %x with user input
-- YAML_DESERIALIZATION: YAML.load on untrusted data (use YAML.safe_load)
-- HARDCODED_SECRETS: API keys, database credentials in code
-- WEAK_CRYPTO: MD5, SHA1 usage for security purposes
-- PATH_TRAVERSAL: File.open, File.read with user input
-- MASS_ASSIGNMENT: params without strong parameters in Rails
-- INSECURE_RANDOM: Random.rand for security tokens (use SecureRandom)
-- OPEN_REDIRECT: redirect_to with user input
+Look specifically for these Swift vulnerabilities:
+- SQL_INJECTION: String interpolation in SQL
+- HARDCODED_SECRETS: API keys in source
+- WEAK_CRYPTO: Deprecated algorithms
+- INSECURE_NETWORKING: HTTP vs HTTPS issues
+- KEYCHAIN_MISUSE: Improper keychain usage
 
-Pay attention to Rails framework-specific issues.""",
+Focus on iOS security patterns.""",
 
-            'rust': f"""You are a Rust security expert. Analyze this Rust code for security vulnerabilities.
+            'kotlin': base_instruction.format(language='Kotlin') + """
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+Look specifically for these Kotlin vulnerabilities:
+- SQL_INJECTION: String templates in SQL
+- HARDCODED_SECRETS: API keys in source
+- INSECURE_DESERIALIZATION: Unsafe deserialization
+- COMMAND_INJECTION: ProcessBuilder with user input
+- NULL_SAFETY_BYPASS: Unsafe null assertions
 
-Rust-specific vulnerabilities to look for:
-- UNSAFE_CODE: unsafe blocks that could introduce memory safety issues
-- INTEGER_OVERFLOW: Arithmetic operations that could overflow
-- HARDCODED_SECRETS: API keys, passwords embedded in code
-- WEAK_CRYPTO: Weak cryptographic algorithms or implementations
-- COMMAND_INJECTION: std::process::Command with user input
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- INSECURE_RANDOM: Non-cryptographic random number generation
-- BUFFER_OVERFLOW: Unsafe array/slice access in unsafe blocks
-- RACE_CONDITION: Shared state without proper synchronization
+Focus on Android/JVM security.""",
 
-Focus on unsafe code blocks and external interface security.""",
+            'typescript': base_instruction.format(language='TypeScript') + """
 
-            'swift': f"""You are a Swift security expert. Analyze this Swift code for security vulnerabilities.
+Look specifically for these TypeScript vulnerabilities:
+- XSS: Unescaped output, innerHTML usage
+- HARDCODED_SECRETS: API keys in client code
+- PROTOTYPE_POLLUTION: Unsafe object operations
+- UNSAFE_EVAL: eval(), Function() usage
+- INSECURE_RANDOMNESS: Math.random() for security
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{base_json_format}
+Focus on TypeScript-specific patterns.""",
 
-Swift-specific vulnerabilities to look for:
-- SQL_INJECTION: String concatenation in database queries
-- XSS: Unescaped output in web views
-- HARDCODED_SECRETS: API keys, passwords in code
-- WEAK_CRYPTO: Weak cryptographic algorithms
-- INSECURE_RANDOM: arc4random() for security-critical purposes
-- PATH_TRAVERSAL: File operations with unsanitized paths
-- MEMORY_CORRUPTION: Unsafe pointers, force unwrapping
-- INSECURE_NETWORKING: Unencrypted HTTP, certificate bypass
-- KEYCHAIN_MISUSE: Improper keychain access, weak access control
-- BIOMETRIC_BYPASS: Weak biometric authentication implementation
+            'default': base_instruction.format(language='') + """
 
-Consider iOS/macOS-specific security features and frameworks."""
+Look for these common vulnerabilities:
+- HARDCODED_SECRETS: API keys, passwords in source
+- WEAK_CRYPTO: MD5, SHA1, weak encryption
+- COMMAND_INJECTION: System calls with user input
+- PATH_TRAVERSAL: File operations with user paths
+- INSECURE_RANDOM: Weak random generation
+- SQL_INJECTION: Unsanitized database queries
+- XSS: Unescaped output in web contexts
+
+Focus on high-confidence vulnerabilities only."""
         }
 
-    def analyze_code(self, code: str, language: str, filename: str = "unknown") -> Dict[str, Any]:
+    def analyze_code(self, code_content: str, filename: str, language: str = None) -> Dict:
         """
-        Analyze code for security vulnerabilities using language-specific prompts
+        Enhanced code analysis with language-specific prompts - FIXED VERSION
         """
-        print(f"🔍 Analyzing {filename} ({language}) - {len(code.split())} words of code")
+        print(f"🔍 Analyzing {filename} ({len(code_content.split())} words of {language or 'detecting'} code)")
 
-        # Get language-specific prompt
-        prompt = self.language_prompts.get(language.lower())
-        if not prompt:
-            # Fallback to generic analysis
-            prompt = self._get_generic_prompt()
+        # Detect language if not provided - FIXED VERSION
+        if not language:
+            language = self._detect_language(filename, code_content)
+
+        # Get appropriate prompt for language
+        prompt = self._get_language_prompt(language)
 
         # Add line numbers to code for reference
-        numbered_code = self._add_line_numbers(code)
+        numbered_code = self._add_line_numbers(code_content)
 
-        # Build the full analysis prompt
-        full_prompt = f"{prompt}\n\nCODE TO ANALYZE ({language}):\n```{language}\n{numbered_code}\n```\n\nReturn only the JSON response:"
+        # Truncate very long files to avoid token limits
+        if len(numbered_code) > 15000:  # About 3000 tokens
+            lines = numbered_code.split('\n')
+            numbered_code = '\n'.join(lines[:200]) + '\n... [File truncated for analysis] ...'
+            print(f"   📄 File truncated to first 200 lines for analysis")
+
+        # Build the analysis prompt
+        full_prompt = f"{prompt}\n\nCODE TO ANALYZE:\n```{language}\n{numbered_code}\n```\n\nReturn only the JSON response:"
 
         payload = {
             "contents": [
@@ -358,7 +325,7 @@ Consider iOS/macOS-specific security features and frameworks."""
             ],
             "generationConfig": {
                 "temperature": 0.1,  # Low temperature for consistent analysis
-                "maxOutputTokens": 3000,  # Increased for complex analysis
+                "maxOutputTokens": 2000,
                 "topP": 0.8,
                 "topK": 40
             }
@@ -374,7 +341,7 @@ Consider iOS/macOS-specific security features and frameworks."""
                     'X-goog-api-key': self.api_key
                 },
                 json=payload,
-                timeout=45  # Increased timeout for complex analysis
+                timeout=45  # Increased timeout
             )
 
             response.raise_for_status()
@@ -383,71 +350,116 @@ Consider iOS/macOS-specific security features and frameworks."""
             if 'candidates' in result and result['candidates']:
                 gemini_response = result['candidates'][0]['content']['parts'][0]['text']
 
-                # Extract JSON from response
+                # Enhanced JSON extraction
                 json_match = re.search(r'\{.*\}', gemini_response, re.DOTALL)
                 if json_match:
-                    analysis_result = json.loads(json_match.group())
+                    try:
+                        analysis_result = json.loads(json_match.group())
 
-                    # Add metadata
-                    analysis_result['metadata'] = {
-                        'filename': filename,
-                        'language': language,
-                        'analyzed_at': time.time(),
-                        'code_length': len(code),
-                        'line_count': len(code.split('\n')),
-                        'gemini_tokens_used': result.get('usageMetadata', {}).get('totalTokenCount', 0)
-                    }
+                        # Validate required fields
+                        if 'vulnerabilities' not in analysis_result:
+                            analysis_result['vulnerabilities'] = []
+                        if 'summary' not in analysis_result:
+                            analysis_result['summary'] = {
+                                'total_vulnerabilities': len(analysis_result['vulnerabilities']),
+                                'critical_count': 0,
+                                'high_count': 0,
+                                'medium_count': 0,
+                                'low_count': 0,
+                                'info_count': 0
+                            }
 
-                    vulnerabilities_count = len(analysis_result.get('vulnerabilities', []))
-                    print(f"✅ Analysis complete! Found {vulnerabilities_count} potential issues in {language} code")
+                        # Add metadata
+                        analysis_result['metadata'] = {
+                            'filename': filename,
+                            'language': language,
+                            'analyzed_at': time.time(),
+                            'code_length': len(code_content),
+                            'gemini_tokens_used': result.get('usageMetadata', {}).get('totalTokenCount', 0),
+                            'analysis_version': '2.0'
+                        }
 
-                    return analysis_result
+                        vuln_count = len(analysis_result.get('vulnerabilities', []))
+                        print(f"✅ Analysis complete! Found {vuln_count} potential issues")
+                        return analysis_result
+
+                    except json.JSONDecodeError as e:
+                        print(f"❌ JSON parsing error: {str(e)}")
+                        return self._create_error_response("Invalid JSON response from Gemini", gemini_response[:500])
                 else:
-                    return self._create_error_response("Failed to parse Gemini JSON response", gemini_response)
+                    print("❌ No JSON found in Gemini response")
+                    return self._create_error_response("No JSON found in response", gemini_response[:500])
             else:
-                return self._create_error_response("No response from Gemini API", str(result))
+                print("❌ No candidates in Gemini response")
+                return self._create_error_response("No response candidates from Gemini API", str(result))
 
+        except requests.exceptions.Timeout:
+            print("❌ Gemini API timeout")
+            return self._create_error_response("Analysis timeout - file may be too large")
         except requests.exceptions.RequestException as e:
+            print(f"❌ API request failed: {str(e)}")
             return self._create_error_response(f"API request failed: {str(e)}")
-        except json.JSONDecodeError as e:
-            return self._create_error_response(f"JSON parsing failed: {str(e)}")
         except Exception as e:
+            print(f"❌ Unexpected error: {str(e)}")
             return self._create_error_response(f"Unexpected error: {str(e)}")
 
-    def _get_generic_prompt(self) -> str:
-        """Fallback prompt for unsupported languages"""
-        return """You are a security expert. Analyze this code for common security vulnerabilities.
+    def _detect_language(self, filename: str, code_content: str) -> str:
+        """Detect programming language from filename and content - FIXED VERSION"""
 
-CRITICAL: Return ONLY valid JSON in this exact format:
-{
-  "vulnerabilities": [
-    {
-      "line_number": 42,
-      "vulnerability_type": "HARDCODED_SECRETS",
-      "severity": "HIGH",
-      "description": "API key or password found in source code",
-      "code_snippet": "api_key = 'secret123'",
-      "fix_suggestion": "Store secrets in environment variables or secure configuration",
-      "confidence": 0.90
-    }
-  ],
-  "summary": {
-    "total_vulnerabilities": 1,
-    "critical_count": 0,
-    "high_count": 1,
-    "medium_count": 0,
-    "low_count": 0
-  }
-}
+        # FIXED: Proper string splitting for extension detection
+        if '.' in filename:
+            ext = '.' + filename.lower().split('.')[-1]
+        else:
+            ext = ''
 
-Look for common vulnerabilities:
-- HARDCODED_SECRETS: API keys, passwords, tokens in code
-- COMMAND_INJECTION: User input in system commands
-- PATH_TRAVERSAL: Unsafe file path operations
-- WEAK_CRYPTO: Weak cryptographic algorithms
-- INSECURE_RANDOM: Weak random number generation
+        # Extension-based detection
+        ext_map = {
+            '.py': 'python', '.pyx': 'python', '.pyw': 'python',
+            '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript',
+            '.ts': 'typescript', '.tsx': 'typescript',
+            '.java': 'java', '.kt': 'kotlin', '.scala': 'scala',
+            '.c': 'c', '.h': 'c',
+            '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp',
+            '.cs': 'csharp', '.go': 'go', '.rs': 'rust', '.swift': 'swift',
+            '.php': 'php', '.rb': 'ruby', '.pl': 'perl', '.r': 'r',
+            '.sh': 'bash', '.bash': 'bash', '.ps1': 'powershell',
+            '.sql': 'sql', '.html': 'html', '.xml': 'xml'
+        }
 
-Be precise with line numbers and only flag real vulnerabilities."""
+        if ext in ext_map:
+            return ext_map[ext]
+
+        # Special filename detection
+        filename_lower = filename.lower()
+        if filename_lower in ['dockerfile', 'makefile', 'rakefile', 'gemfile']:
+            return filename_lower
+
+        # Content-based detection fallback
+        content_lower = code_content[:1000].lower()  # Check first 1000 chars
+
+        content_patterns = [
+            ('import java.', 'java'),
+            ('public class', 'java'),
+            ('def ', 'python'),
+            ('import ', 'python'),
+            ('function ', 'javascript'),
+            ('const ', 'javascript'),
+            ('#include', 'c'),
+            ('using System', 'csharp'),
+            ('package main', 'go'),
+            ('<?php', 'php'),
+            ('class ', 'ruby')  # Could be multiple languages
+        ]
+
+        for pattern, lang in content_patterns:
+            if pattern in content_lower:
+                return lang
+
+        return 'unknown'
+
+    def _get_language_prompt(self, language: str) -> str:
+        """Get appropriate security analysis prompt for language"""
+        return self.language_prompts.get(language, self.language_prompts['default'])
 
     def _add_line_numbers(self, code: str) -> str:
         """Add line numbers to code for easier reference"""
@@ -457,7 +469,7 @@ Be precise with line numbers and only flag real vulnerabilities."""
             numbered_lines.append(f"{i:3d}: {line}")
         return '\n'.join(numbered_lines)
 
-    def _create_error_response(self, error_message: str, raw_response: str = "") -> Dict[str, Any]:
+    def _create_error_response(self, error_message: str, raw_response: str = "") -> Dict:
         """Create standardized error response"""
         return {
             'error': True,
@@ -469,119 +481,33 @@ Be precise with line numbers and only flag real vulnerabilities."""
                 'critical_count': 0,
                 'high_count': 0,
                 'medium_count': 0,
-                'low_count': 0
+                'low_count': 0,
+                'info_count': 0
             }
         }
 
-    def analyze_file(self, file_path: str, language: str = None) -> Dict[str, Any]:
-        """Analyze a file for security vulnerabilities"""
+    def analyze_file(self, file_path: str) -> Dict:
+        """Analyze a file with automatic language detection"""
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                code = f.read()
+            # Try multiple encodings
+            code_content = None
+            for encoding in ['utf-8', 'utf-16', 'latin-1', 'cp1252']:
+                try:
+                    with open(file_path, 'r', encoding=encoding) as f:
+                        code_content = f.read()
+                    break
+                except UnicodeDecodeError:
+                    continue
 
-            # Auto-detect language if not provided
-            if not language:
-                from .file_handler import FileHandler
-                handler = FileHandler()
-                language = handler.get_file_language(os.path.basename(file_path)) or 'unknown'
+            if code_content is None:
+                return self._create_error_response("Could not decode file as text")
 
-            return self.analyze_code(code, language, file_path)
+            filename = os.path.basename(file_path)
+            language = self._detect_language(filename, code_content)
+
+            return self.analyze_code(code_content, filename, language)
+
         except FileNotFoundError:
             return self._create_error_response(f"File not found: {file_path}")
         except Exception as e:
             return self._create_error_response(f"Error reading file: {str(e)}")
-
-    def get_supported_languages(self) -> List[str]:
-        """Get list of languages with specialized analysis prompts"""
-        return list(self.language_prompts.keys())
-
-def test_multi_language_analysis():
-    """Test the analyzer with different programming languages"""
-
-    analyzer = EnhancedGeminiSecurityAnalyzer(API_KEY)
-
-    # Test cases for different languages
-    test_cases = {
-        "java": '''
-public class UserService {
-    public User getUser(String userId) {
-        String query = "SELECT * FROM users WHERE id = " + userId;
-        return database.executeQuery(query);
-    }
-
-    private static final String API_KEY = "sk-abc123def456";
-}''',
-
-        "go": '''
-package main
-
-import (
-    "fmt"
-    "os/exec"
-)
-
-const APIKey = "secret-key-123"
-
-func processFile(filename string) {
-    cmd := exec.Command("convert", filename, "output.jpg")
-    cmd.Run()
-}''',
-
-        "php": '''
-<?php
-$user_id = $_GET['id'];
-$query = "SELECT * FROM users WHERE id = " . $user_id;
-$result = mysql_query($query);
-
-echo "<div>" . $_POST['content'] . "</div>";
-
-$password = "admin123";
-?>''',
-
-        "csharp": '''
-using System;
-using System.Data.SqlClient;
-
-public class UserController {
-    private string connectionString = "Server=localhost;Database=app;User=admin;Password=secret123;";
-
-    public User GetUser(string userId) {
-        string query = "SELECT * FROM Users WHERE Id = " + userId;
-        using (var connection = new SqlConnection(connectionString)) {
-            var command = new SqlCommand(query, connection);
-            // Execute query
-        }
-    }
-}'''
-    }
-
-    print("🧪 TESTING MULTI-LANGUAGE SECURITY ANALYSIS")
-    print("=" * 60)
-
-    for language, code in test_cases.items():
-        print(f"\n🎯 Testing {language.upper()} analysis:")
-        print("-" * 40)
-
-        result = analyzer.analyze_code(code, language, f"test.{language}")
-
-        if result.get('error'):
-            print(f"❌ Error: {result['message']}")
-        else:
-            vulns = result.get('vulnerabilities', [])
-            summary = result.get('summary', {})
-
-            print(f"📊 Found {len(vulns)} vulnerabilities:")
-            for vuln in vulns:
-                print(f"   🚨 Line {vuln['line_number']}: {vuln['vulnerability_type']} ({vuln['severity']})")
-                print(f"      {vuln['description'][:60]}...")
-
-        time.sleep(2)  # Rate limiting
-
-    print(f"\n✅ Multi-language testing complete!")
-    return True
-
-if __name__ == "__main__":
-    # Test multi-language capabilities
-    test_multi_language_analysis()
-
-GeminiSecurityAnalyzer = EnhancedGeminiSecurityAnalyzer

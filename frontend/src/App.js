@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Upload, Shield, AlertTriangle, CheckCircle, FileText, Download } from 'lucide-react';
+import { Upload, Shield, AlertTriangle, CheckCircle, FileText, Download, Code2, Bug, Zap } from 'lucide-react';
 import './App.css';
 
 const API_BASE_URL = 'http://localhost:8000';
@@ -15,58 +15,273 @@ function App() {
 
     const [dragActive, setDragActive] = useState(false);
 
+    // Comprehensive list of 40+ supported programming languages
+    const supportedExtensions = [
+        // Python
+        '.py', '.pyx', '.pyw', '.pyi',
+
+        // JavaScript/TypeScript/Node.js
+        '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.es6', '.es',
+
+        // Java & JVM languages
+        '.java', '.kt', '.kts', '.scala', '.sc', '.clj', '.cljs', '.groovy',
+
+        // C/C++
+        '.c', '.cpp', '.cc', '.cxx', '.c++', '.h', '.hpp', '.hh', '.hxx', '.h++',
+
+        // C# & .NET
+        '.cs', '.csx', '.vb', '.vbs', '.fs', '.fsx',
+
+        // Systems languages
+        '.go', '.rs', '.zig', '.nim', '.d',
+
+        // Web languages
+        '.php', '.php3', '.php4', '.php5', '.php7', '.phtml',
+        '.rb', '.rbw', '.rake', '.gemspec', '.erb',
+        '.swift',
+
+        // Functional languages
+        '.hs', '.lhs', '.ml', '.mli', '.ocaml', '.elm', '.ex', '.exs',
+        '.erl', '.hrl', '.lisp', '.lsp', '.scheme', '.scm',
+
+        // Scripting languages
+        '.pl', '.pm', '.perl', '.py3', '.pyw3',
+        '.r', '.R', '.rmd', '.Rmd',
+        '.lua', '.m', '.matlab',
+        '.dart', '.jl', '.cr',
+
+        // Shell scripts
+        '.sh', '.bash', '.zsh', '.fish', '.csh', '.tcsh', '.ksh', '.ps1', '.psm1', '.psd1',
+
+        // Database
+        '.sql', '.psql', '.mysql', '.sqlite', '.pgsql', '.plsql',
+
+        // Web templates & markup
+        '.html', '.htm', '.xhtml', '.xml', '.xsl', '.xslt',
+        '.jsp', '.jspx', '.asp', '.aspx', '.cshtml', '.vbhtml',
+        '.vue', '.svelte', '.astro',
+
+        // Assembly & low-level
+        '.asm', '.s', '.S', '.nasm', '.masm',
+
+        // Fortran & scientific
+        '.f', '.f77', '.f90', '.f95', '.f03', '.f08', '.for',
+
+        // Pascal & Ada
+        '.pas', '.pp', '.inc', '.ada', '.adb', '.ads',
+
+        // Other specialized languages
+        '.sol', '.move', '.cairo', '.yul', // Blockchain
+        '.proto', '.thrift', // Protocol buffers
+        '.tf', '.tfvars', // Terraform
+        '.dockerfile', '.containerfile', // Docker
+        '.makefile', '.mk', '.cmake', // Build systems
+        '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', // Config files
+
+        // Archives for codebase analysis
+        '.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2'
+    ];
+
+    // Language detection and metadata
+    const getLanguageInfo = (filename) => {
+        const name = filename.toLowerCase();
+        const ext = '.' + name.split('.').pop();
+
+        const languageMap = {
+            // Mainstream languages
+            '.py': { name: 'Python', color: '#3776ab', category: 'Backend' },
+            '.pyx': { name: 'Cython', color: '#3776ab', category: 'Backend' },
+            '.js': { name: 'JavaScript', color: '#f7df1e', category: 'Frontend' },
+            '.jsx': { name: 'React', color: '#61dafb', category: 'Frontend' },
+            '.ts': { name: 'TypeScript', color: '#007acc', category: 'Frontend' },
+            '.tsx': { name: 'TypeScript React', color: '#007acc', category: 'Frontend' },
+            '.mjs': { name: 'JavaScript Module', color: '#f7df1e', category: 'Frontend' },
+
+            // JVM ecosystem
+            '.java': { name: 'Java', color: '#ed8b00', category: 'Backend' },
+            '.kt': { name: 'Kotlin', color: '#7f52ff', category: 'Backend' },
+            '.scala': { name: 'Scala', color: '#dc322f', category: 'Backend' },
+            '.clj': { name: 'Clojure', color: '#5881d8', category: 'Functional' },
+            '.groovy': { name: 'Groovy', color: '#e69f56', category: 'Backend' },
+
+            // Systems programming
+            '.c': { name: 'C', color: '#a8b9cc', category: 'Systems' },
+            '.cpp': { name: 'C++', color: '#00599c', category: 'Systems' },
+            '.cc': { name: 'C++', color: '#00599c', category: 'Systems' },
+            '.cxx': { name: 'C++', color: '#00599c', category: 'Systems' },
+            '.go': { name: 'Go', color: '#00add8', category: 'Backend' },
+            '.rs': { name: 'Rust', color: '#dea584', category: 'Systems' },
+            '.zig': { name: 'Zig', color: '#ec915c', category: 'Systems' },
+            '.nim': { name: 'Nim', color: '#ffe953', category: 'Systems' },
+            '.d': { name: 'D', color: '#ba595e', category: 'Systems' },
+
+            // .NET ecosystem
+            '.cs': { name: 'C#', color: '#239120', category: 'Backend' },
+            '.vb': { name: 'Visual Basic', color: '#945db7', category: 'Backend' },
+            '.fs': { name: 'F#', color: '#378bba', category: 'Functional' },
+
+            // Web backend
+            '.php': { name: 'PHP', color: '#777bb4', category: 'Backend' },
+            '.rb': { name: 'Ruby', color: '#cc342d', category: 'Backend' },
+            '.rake': { name: 'Ruby Rake', color: '#cc342d', category: 'Backend' },
+            '.erb': { name: 'ERB Template', color: '#cc342d', category: 'Template' },
+
+            // Mobile
+            '.swift': { name: 'Swift', color: '#fa7343', category: 'Mobile' },
+            '.dart': { name: 'Dart', color: '#0175c2', category: 'Mobile' },
+
+            // Functional languages
+            '.hs': { name: 'Haskell', color: '#5e5086', category: 'Functional' },
+            '.ml': { name: 'OCaml', color: '#3be133', category: 'Functional' },
+            '.elm': { name: 'Elm', color: '#60b5cc', category: 'Frontend' },
+            '.ex': { name: 'Elixir', color: '#6e4a7e', category: 'Backend' },
+            '.erl': { name: 'Erlang', color: '#b83998', category: 'Backend' },
+            '.lisp': { name: 'Lisp', color: '#3fb68b', category: 'Functional' },
+            '.scheme': { name: 'Scheme', color: '#1e4aec', category: 'Functional' },
+
+            // Scripting
+            '.pl': { name: 'Perl', color: '#0073a1', category: 'Scripting' },
+            '.r': { name: 'R', color: '#276dc3', category: 'Data Science' },
+            '.R': { name: 'R', color: '#276dc3', category: 'Data Science' },
+            '.lua': { name: 'Lua', color: '#000080', category: 'Scripting' },
+            '.m': { name: 'MATLAB', color: '#e16737', category: 'Data Science' },
+            '.jl': { name: 'Julia', color: '#9558b2', category: 'Data Science' },
+            '.cr': { name: 'Crystal', color: '#000100', category: 'Backend' },
+
+            // Shell scripts
+            '.sh': { name: 'Shell', color: '#4eaa25', category: 'DevOps' },
+            '.bash': { name: 'Bash', color: '#4eaa25', category: 'DevOps' },
+            '.zsh': { name: 'Zsh', color: '#4eaa25', category: 'DevOps' },
+            '.fish': { name: 'Fish Shell', color: '#4eaa25', category: 'DevOps' },
+            '.ps1': { name: 'PowerShell', color: '#012456', category: 'DevOps' },
+
+            // Database
+            '.sql': { name: 'SQL', color: '#336791', category: 'Database' },
+            '.psql': { name: 'PostgreSQL', color: '#336791', category: 'Database' },
+            '.mysql': { name: 'MySQL', color: '#00758f', category: 'Database' },
+            '.sqlite': { name: 'SQLite', color: '#003b57', category: 'Database' },
+            '.plsql': { name: 'PL/SQL', color: '#f80000', category: 'Database' },
+
+            // Web templates
+            '.html': { name: 'HTML', color: '#e34c26', category: 'Frontend' },
+            '.xml': { name: 'XML', color: '#0060ac', category: 'Data' },
+            '.jsp': { name: 'JSP', color: '#ed8b00', category: 'Backend' },
+            '.asp': { name: 'ASP', color: '#239120', category: 'Backend' },
+            '.aspx': { name: 'ASP.NET', color: '#239120', category: 'Backend' },
+            '.vue': { name: 'Vue.js', color: '#4fc08d', category: 'Frontend' },
+            '.svelte': { name: 'Svelte', color: '#ff3e00', category: 'Frontend' },
+
+            // Assembly
+            '.asm': { name: 'Assembly', color: '#6e4c13', category: 'Assembly' },
+            '.s': { name: 'Assembly', color: '#6e4c13', category: 'Assembly' },
+            '.nasm': { name: 'NASM', color: '#6e4c13', category: 'Assembly' },
+
+            // Scientific/Engineering
+            '.f': { name: 'Fortran', color: '#734f96', category: 'Scientific' },
+            '.f90': { name: 'Fortran 90', color: '#734f96', category: 'Scientific' },
+            '.pas': { name: 'Pascal', color: '#e3f171', category: 'Legacy' },
+            '.ada': { name: 'Ada', color: '#02f88c', category: 'Systems' },
+
+            // Blockchain
+            '.sol': { name: 'Solidity', color: '#363636', category: 'Blockchain' },
+            '.move': { name: 'Move', color: '#4285f4', category: 'Blockchain' },
+            '.cairo': { name: 'Cairo', color: '#ff6b35', category: 'Blockchain' },
+
+            // Infrastructure
+            '.tf': { name: 'Terraform', color: '#623ce4', category: 'DevOps' },
+            '.dockerfile': { name: 'Dockerfile', color: '#384d54', category: 'DevOps' },
+            '.yaml': { name: 'YAML', color: '#cb171e', category: 'Config' },
+            '.yml': { name: 'YAML', color: '#cb171e', category: 'Config' },
+            '.toml': { name: 'TOML', color: '#9c4221', category: 'Config' },
+            '.proto': { name: 'Protocol Buffer', color: '#4285f4', category: 'API' },
+
+            // Archives
+            '.zip': { name: 'ZIP Archive', color: '#6c757d', category: 'Archive' },
+            '.tar': { name: 'TAR Archive', color: '#6c757d', category: 'Archive' },
+            '.gz': { name: 'Archive', color: '#6c757d', category: 'Archive' }
+        };
+
+        // Special filename detection
+        if (name === 'dockerfile' || name === 'containerfile') {
+            return { name: 'Dockerfile', color: '#384d54', category: 'DevOps' };
+        }
+        if (name === 'makefile' || name === 'makefile.am' || name === 'makefile.in') {
+            return { name: 'Makefile', color: '#427819', category: 'Build' };
+        }
+        if (name === 'cmakelists.txt') {
+            return { name: 'CMake', color: '#064f8c', category: 'Build' };
+        }
+        if (name.endsWith('.cmake')) {
+            return { name: 'CMake', color: '#064f8c', category: 'Build' };
+        }
+
+        return languageMap[ext] || { name: 'Code', color: '#6c757d', category: 'Other' };
+    };
+
+    // Get severity color scheme
+    const getSeverityColor = (severity) => {
+        const colors = {
+            'CRITICAL': '#dc3545',
+            'HIGH': '#fd7e14',
+            'MEDIUM': '#ffc107',
+            'LOW': '#28a745',
+            'INFO': '#17a2b8'
+        };
+        return colors[severity] || '#6c757d';
+    };
+
+    // Get vulnerability type icon
+    const getVulnIcon = (vulnType) => {
+        const iconMap = {
+            'SQL_INJECTION': '💉',
+            'XSS': '🕷️',
+            'CSRF': '🔄',
+            'HARDCODED_SECRETS': '🔑',
+            'WEAK_CRYPTO': '🔐',
+            'COMMAND_INJECTION': '⚡',
+            'BUFFER_OVERFLOW': '💥',
+            'RACE_CONDITION': '🏃‍♂️',
+            'PATH_TRAVERSAL': '📁',
+            'INSECURE_DESERIALIZATION': '📦',
+            'USE_AFTER_FREE': '🧠',
+            'NULL_POINTER_DEREFERENCE': '📍',
+            'MEMORY_LEAK': '🕳️',
+            'INTEGER_OVERFLOW': '🔢',
+            'FORMAT_STRING': '📝'
+        };
+        return iconMap[vulnType] || '⚠️';
+    };
+
     const handleFileUpload = useCallback(async (files) => {
         const file = files[0];
         if (!file) return;
 
-        // Validate file type - now supporting 40+ programming languages
-        const validExtensions = [
-            // Python
-            '.py', '.pyx', '.pyw',
-            // JavaScript/TypeScript
-            '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
-            // Java
-            '.java',
-            // C/C++
-            '.c', '.cpp', '.cc', '.cxx', '.c++', '.h', '.hpp', '.hh', '.hxx',
-            // C#
-            '.cs', '.csx',
-            // Go
-            '.go',
-            // Rust
-            '.rs',
-            // PHP
-            '.php', '.php3', '.php4', '.php5', '.phtml',
-            // Ruby
-            '.rb', '.rbw', '.rake', '.gemspec',
-            // Swift
-            '.swift',
-            // Kotlin
-            '.kt', '.kts',
-            // Scala
-            '.scala', '.sc',
-            // Perl
-            '.pl', '.pm', '.perl',
-            // Shell scripts
-            '.sh', '.bash', '.zsh', '.fish', '.ps1',
-            // SQL
-            '.sql', '.psql', '.mysql',
-            // Web languages
-            '.html', '.htm', '.xml', '.jsp', '.asp', '.aspx',
-            // Other languages
-            '.r', '.R', '.m', '.lua', '.dart', '.vb', '.vbs',
-            '.f', '.f90', '.pas', '.ada', '.asm', '.s',
-            '.clj', '.ex', '.exs', '.erl', '.hrl', '.fs', '.fsx',
-            '.hs', '.ml', '.nim', '.jl', '.cr',
-            // Archives
-            '.zip'
-        ];
+        // Enhanced file validation
         const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+        const fileName = file.name.toLowerCase();
 
-        if (!validExtensions.includes(fileExtension)) {
+        // Special filename checks
+        const isSpecialFile = fileName === 'dockerfile' || fileName === 'containerfile' ||
+            fileName === 'makefile' || fileName.endsWith('makefile') ||
+            fileName === 'cmakelists.txt';
+
+        if (!supportedExtensions.includes(fileExtension) && !isSpecialFile) {
             setAnalysisState(prev => ({
                 ...prev,
-                error: `Unsupported file type. Supported formats: ${validExtensions.join(', ')}`
+                error: `Unsupported file type: ${fileExtension}. We support 40+ languages including Python, JavaScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, Kotlin, and many more.`
+            }));
+            return;
+        }
+
+        // File size validation (increased limits for different file types)
+        const maxSize = fileExtension.includes('zip') || fileExtension.includes('tar') ?
+            100 * 1024 * 1024 : // 100MB for archives
+            10 * 1024 * 1024;   // 10MB for source files
+
+        if (file.size > maxSize) {
+            setAnalysisState(prev => ({
+                ...prev,
+                error: `File too large. Maximum size: ${fileExtension.includes('zip') || fileExtension.includes('tar') ? '100MB' : '10MB'}`
             }));
             return;
         }
@@ -84,7 +299,12 @@ function App() {
             const formData = new FormData();
             formData.append('file', file);
 
-            const endpoint = fileExtension === '.zip' ? '/api/analyze/codebase' : '/api/analyze/file';
+            // Choose endpoint based on file type
+            const isArchive = fileExtension.includes('zip') || fileExtension.includes('tar');
+            const endpoint = isArchive ? '/api/analyze/codebase' : '/api/analyze/file';
+
+            console.log(`🚀 Uploading ${file.name} (${(file.size / 1024).toFixed(1)}KB) for analysis`);
+
             const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'POST',
                 body: formData
@@ -99,13 +319,14 @@ function App() {
             setAnalysisState(prev => ({
                 ...prev,
                 currentAnalysis: uploadResult.analysis_id,
-                progress: 10
+                progress: 15
             }));
 
-            // Poll for results
+            // Poll for results with enhanced progress tracking
             pollAnalysisStatus(uploadResult.analysis_id);
 
         } catch (error) {
+            console.error('Upload error:', error);
             setAnalysisState(prev => ({
                 ...prev,
                 isAnalyzing: false,
@@ -115,7 +336,7 @@ function App() {
     }, []);
 
     const pollAnalysisStatus = useCallback(async (analysisId) => {
-        const maxAttempts = 60;
+        const maxAttempts = 120; // Increased for large codebases
         let attempts = 0;
 
         const poll = async () => {
@@ -129,15 +350,21 @@ function App() {
 
                 const status = await statusResponse.json();
 
+                // Enhanced progress calculation
+                const progressIncrement = Math.max(2, Math.floor(70 / maxAttempts));
+                const newProgress = Math.min(status.progress || (15 + attempts * progressIncrement), 85);
+
                 setAnalysisState(prev => ({
                     ...prev,
-                    progress: Math.min(status.progress || prev.progress + 5, 90)
+                    progress: newProgress
                 }));
 
                 if (status.status === 'completed') {
                     const resultsResponse = await fetch(`${API_BASE_URL}/api/analyze/${analysisId}/results`);
                     if (resultsResponse.ok) {
                         const results = await resultsResponse.json();
+                        console.log('📊 Analysis completed:', results);
+
                         setAnalysisState(prev => ({
                             ...prev,
                             isAnalyzing: false,
@@ -149,18 +376,21 @@ function App() {
                     setAnalysisState(prev => ({
                         ...prev,
                         isAnalyzing: false,
-                        error: 'Analysis failed. Please try again.'
+                        error: status.error || 'Analysis failed. Please try again.'
                     }));
                 } else if (attempts < maxAttempts) {
-                    setTimeout(poll, 3000);
+                    // Adaptive polling interval
+                    const pollInterval = attempts < 20 ? 2000 : attempts < 60 ? 3000 : 5000;
+                    setTimeout(poll, pollInterval);
                 } else {
                     setAnalysisState(prev => ({
                         ...prev,
                         isAnalyzing: false,
-                        error: 'Analysis timeout. Please try again.'
+                        error: 'Analysis timeout. Please try again with a smaller file.'
                     }));
                 }
             } catch (error) {
+                console.error('Polling error:', error);
                 setAnalysisState(prev => ({
                     ...prev,
                     isAnalyzing: false,
@@ -192,6 +422,25 @@ function App() {
         }
     };
 
+    // Export results as PDF/JSON
+    const exportResults = (format) => {
+        if (!analysisState.results) return;
+
+        if (format === 'json') {
+            const dataStr = JSON.stringify(analysisState.results, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'security-analysis-results.json';
+            link.click();
+
+            URL.revokeObjectURL(url);
+        }
+        // PDF export would require backend implementation
+    };
+
     return (
         <div className="app">
             <header className="header">
@@ -200,7 +449,7 @@ function App() {
                         <Shield size={32} />
                         <h1>AI Security Auditor</h1>
                     </div>
-                    <p className="tagline">Professional code security analysis powered by AI</p>
+                    <p className="tagline">Professional security analysis for 40+ programming languages powered by AI</p>
                 </div>
             </header>
 
@@ -217,19 +466,62 @@ function App() {
                             >
                                 <Upload size={48} />
                                 <h2>Upload Code for Security Analysis</h2>
-                                <p>Drag and drop your code files or click to browse</p>
+                                <p>Supports 40+ programming languages including Python, JavaScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, and more</p>
 
                                 <input
                                     type="file"
                                     id="file-upload"
                                     className="file-input"
-                                    accept=".py,.pyx,.pyw,.js,.jsx,.ts,.tsx,.mjs,.cjs,.java,.c,.cpp,.cc,.cxx,.c++,.h,.hpp,.hh,.hxx,.cs,.csx,.go,.rs,.php,.php3,.php4,.php5,.phtml,.rb,.rbw,.rake,.gemspec,.swift,.kt,.kts,.scala,.sc,.pl,.pm,.perl,.sh,.bash,.zsh,.fish,.ps1,.sql,.psql,.mysql,.html,.htm,.xml,.jsp,.asp,.aspx,.r,.R,.m,.lua,.dart,.vb,.vbs,.f,.f90,.pas,.ada,.asm,.s,.clj,.ex,.exs,.erl,.hrl,.fs,.fsx,.hs,.ml,.nim,.jl,.cr,.zip"
                                     onChange={(e) => handleFileUpload(e.target.files)}
                                 />
 
                                 <label htmlFor="file-upload" className="upload-button">
-                                    Choose Files
+                                    <Code2 size={20} />
+                                    Choose Files or ZIP Archives
                                 </label>
+
+                                <div className="supported-formats">
+                                    <p><strong>Languages We Support:</strong></p>
+                                    <div className="format-tags">
+                                        <span style={{ backgroundColor: '#3776ab', color: 'white' }}>Python</span>
+                                        <span style={{ backgroundColor: '#f7df1e', color: 'black' }}>JavaScript</span>
+                                        <span style={{ backgroundColor: '#007acc', color: 'white' }}>TypeScript</span>
+                                        <span style={{ backgroundColor: '#ed8b00', color: 'white' }}>Java</span>
+                                        <span style={{ backgroundColor: '#00599c', color: 'white' }}>C++</span>
+                                        <span style={{ backgroundColor: '#00add8', color: 'white' }}>Go</span>
+                                        <span style={{ backgroundColor: '#dea584', color: 'black' }}>Rust</span>
+                                        <span style={{ backgroundColor: '#777bb4', color: 'white' }}>PHP</span>
+                                        <span style={{ backgroundColor: '#cc342d', color: 'white' }}>Ruby</span>
+                                        <span style={{ backgroundColor: '#fa7343', color: 'white' }}>Swift</span>
+                                        <span style={{ backgroundColor: '#239120', color: 'white' }}>C#</span>
+                                        <span style={{ backgroundColor: '#7f52ff', color: 'white' }}>Kotlin</span>
+                                        <span style={{ backgroundColor: '#5e5086', color: 'white' }}>Haskell</span>
+                                        <span style={{ backgroundColor: '#0175c2', color: 'white' }}>Dart</span>
+                                        <span style={{ backgroundColor: '#623ce4', color: 'white' }}>Terraform</span>
+                                        <span style={{ backgroundColor: '#6c757d', color: 'white' }}>+25 more</span>
+                                    </div>
+
+                                    <div className="categories">
+                                        <div className="category-group">
+                                            <strong>Backend:</strong> Python, Java, Go, Rust, C#, PHP, Ruby, Node.js
+                                        </div>
+                                        <div className="category-group">
+                                            <strong>Frontend:</strong> JavaScript, TypeScript, React, Vue, Svelte
+                                        </div>
+                                        <div className="category-group">
+                                            <strong>Systems:</strong> C, C++, Rust, Zig, Assembly, Fortran
+                                        </div>
+                                        <div className="category-group">
+                                            <strong>Mobile:</strong> Swift, Kotlin, Dart, Java, C#
+                                        </div>
+                                        <div className="category-group">
+                                            <strong>DevOps:</strong> Shell, PowerShell, Terraform, Docker, YAML
+                                        </div>
+                                        <div className="category-group">
+                                            <strong>Blockchain:</strong> Solidity, Move, Cairo
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {analysisState.error && (
@@ -246,7 +538,7 @@ function App() {
                             <div className="progress-content">
                                 <div className="spinner"></div>
                                 <h2>Analyzing Your Code</h2>
-                                <p>AI is scanning for security vulnerabilities...</p>
+                                <p>AI is scanning for security vulnerabilities with language-specific analysis patterns...</p>
 
                                 <div className="progress-bar">
                                     <div
@@ -256,6 +548,14 @@ function App() {
                                 </div>
 
                                 <p className="progress-text">{analysisState.progress}% complete</p>
+
+                                <div className="progress-steps">
+                                    {analysisState.progress >= 15 && <span className="step completed">📤 File uploaded</span>}
+                                    {analysisState.progress >= 30 && <span className="step completed">🔍 Language detected</span>}
+                                    {analysisState.progress >= 50 && <span className="step completed">🤖 AI analysis running</span>}
+                                    {analysisState.progress >= 70 && <span className="step completed">📊 Generating report</span>}
+                                    {analysisState.progress >= 100 && <span className="step completed">✅ Analysis complete</span>}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -264,20 +564,30 @@ function App() {
                         <div className="results-section">
                             <div className="results-header">
                                 <h2>Security Analysis Results</h2>
-                                <button
-                                    onClick={() => setAnalysisState({
-                                        isAnalyzing: false,
-                                        currentAnalysis: null,
-                                        results: null,
-                                        error: null,
-                                        progress: 0
-                                    })}
-                                    className="new-analysis-button"
-                                >
-                                    New Analysis
-                                </button>
+                                <div className="results-actions">
+                                    <button
+                                        onClick={() => exportResults('json')}
+                                        className="export-button"
+                                    >
+                                        <Download size={16} />
+                                        Export JSON
+                                    </button>
+                                    <button
+                                        onClick={() => setAnalysisState({
+                                            isAnalyzing: false,
+                                            currentAnalysis: null,
+                                            results: null,
+                                            error: null,
+                                            progress: 0
+                                        })}
+                                        className="new-analysis-button"
+                                    >
+                                        New Analysis
+                                    </button>
+                                </div>
                             </div>
 
+                            {/* Enhanced summary cards */}
                             <div className="summary-cards">
                                 <div className="summary-card">
                                     <h3>Vulnerabilities Found</h3>
@@ -314,64 +624,265 @@ function App() {
                                             }</span>
                                             <span className="label">Low</span>
                                         </div>
+                                        <div className="severity-item info">
+                                            <span className="count">{
+                                                analysisState.results.summary?.info_count ||
+                                                analysisState.results.results?.files?.reduce((count, file) =>
+                                                    count + (file.analysis.vulnerabilities?.filter(v => v.severity === 'INFO').length || 0), 0) || 0
+                                            }</span>
+                                            <span className="label">Info</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="summary-card">
+                                    <h3>Analysis Overview</h3>
+                                    <div className="analysis-stats">
+                                        <div className="stat-item">
+                                            <span className="stat-value">
+                                                {analysisState.results.results?.files?.length || 1}
+                                            </span>
+                                            <span className="stat-label">Files Analyzed</span>
+                                        </div>
+                                        <div className="stat-item">
+                                            <span className="stat-value">
+                                                {analysisState.results.results?.files?.reduce((count, file) =>
+                                                    count + (file.analysis.vulnerabilities?.length || 0), 0) ||
+                                                    analysisState.results.vulnerabilities?.length || 0}
+                                            </span>
+                                            <span className="stat-label">Total Issues</span>
+                                        </div>
+                                        <div className="stat-item">
+                                            <span className="stat-value">
+                                                {analysisState.results.results?.files ?
+                                                    [...new Set(analysisState.results.results.files.map(f =>
+                                                        getLanguageInfo(f.filename).name))].length : 1}
+                                            </span>
+                                            <span className="stat-label">Languages</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="summary-card">
+                                    <h3>Risk Assessment</h3>
+                                    <div className="risk-meter">
+                                        {(() => {
+                                            const critical = analysisState.results.summary?.critical_count || 0;
+                                            const high = analysisState.results.summary?.high_count || 0;
+                                            const medium = analysisState.results.summary?.medium_count || 0;
+
+                                            const riskScore = (critical * 10) + (high * 5) + (medium * 2);
+                                            const riskLevel = riskScore > 50 ? 'HIGH' : riskScore > 20 ? 'MEDIUM' : riskScore > 5 ? 'LOW' : 'MINIMAL';
+                                            const riskColor = riskLevel === 'HIGH' ? '#dc3545' :
+                                                riskLevel === 'MEDIUM' ? '#fd7e14' :
+                                                    riskLevel === 'LOW' ? '#ffc107' : '#28a745';
+
+                                            return (
+                                                <>
+                                                    <div className="risk-level" style={{ backgroundColor: riskColor }}>
+                                                        {riskLevel}
+                                                    </div>
+                                                    <div className="risk-description">
+                                                        {riskLevel === 'HIGH' && 'Immediate attention required'}
+                                                        {riskLevel === 'MEDIUM' && 'Several issues need fixing'}
+                                                        {riskLevel === 'LOW' && 'Minor improvements suggested'}
+                                                        {riskLevel === 'MINIMAL' && 'Good security posture'}
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </div>
 
-                            {analysisState.results.results?.files?.length > 0 && (
+                            {/* File results display */}
+                            {analysisState.results.results?.files?.length > 0 ? (
+                                <div className="detailed-results">
+                                    <h3>Detailed Findings by File</h3>
+
+                                    {analysisState.results.results.files.map((file, fileIndex) => {
+                                        const languageInfo = getLanguageInfo(file.filename);
+                                        const vulnerabilities = file.analysis.vulnerabilities || [];
+
+                                        return (
+                                            <div key={fileIndex} className="file-result">
+                                                <div className="file-header">
+                                                    <div className="file-info">
+                                                        <h4>{file.filename}</h4>
+                                                        <span
+                                                            className="language-badge"
+                                                            style={{ backgroundColor: languageInfo.color }}
+                                                        >
+                                                            {languageInfo.name}
+                                                        </span>
+                                                        <span className="category-badge">
+                                                            {languageInfo.category}
+                                                        </span>
+                                                    </div>
+                                                    <div className="file-stats">
+                                                        <span className="issue-count">
+                                                            {vulnerabilities.length} issues
+                                                        </span>
+                                                        {file.analysis.metadata && (
+                                                            <span className="code-length">
+                                                                {Math.round(file.analysis.metadata.code_length / 1024 * 10) / 10}KB
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {vulnerabilities.length > 0 && (
+                                                    <div className="vulnerabilities-list">
+                                                        {vulnerabilities
+                                                            .sort((a, b) => {
+                                                                const severityOrder = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
+                                                                return severityOrder[b.severity] - severityOrder[a.severity];
+                                                            })
+                                                            .map((vuln, vulnIndex) => (
+                                                                <div key={vulnIndex} className="vulnerability-item">
+                                                                    <div className="vuln-header">
+                                                                        <span className="vuln-icon">
+                                                                            {getVulnIcon(vuln.vulnerability_type)}
+                                                                        </span>
+                                                                        <span
+                                                                            className="severity-badge"
+                                                                            style={{ backgroundColor: getSeverityColor(vuln.severity) }}
+                                                                        >
+                                                                            {vuln.severity}
+                                                                        </span>
+                                                                        <span className="vuln-type">
+                                                                            {vuln.vulnerability_type.replace(/_/g, ' ')}
+                                                                        </span>
+                                                                        <span className="line-number">
+                                                                            Line {vuln.line_number}
+                                                                        </span>
+                                                                        {vuln.confidence && (
+                                                                            <span className="confidence">
+                                                                                {Math.round(vuln.confidence * 100)}% confidence
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    <div className="vuln-content">
+                                                                        <p className="description">{vuln.description}</p>
+
+                                                                        {vuln.code_snippet && (
+                                                                            <div className="code-snippet">
+                                                                                <h5>Vulnerable Code:</h5>
+                                                                                <pre><code>{vuln.code_snippet}</code></pre>
+                                                                            </div>
+                                                                        )}
+
+                                                                        <div className="fix-suggestion">
+                                                                            <h5>
+                                                                                <Zap size={16} />
+                                                                                Recommended Fix:
+                                                                            </h5>
+                                                                            <p>{vuln.fix_suggestion}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+                                                )}
+
+                                                {vulnerabilities.length === 0 && (
+                                                    <div className="no-issues">
+                                                        <CheckCircle size={20} color="#28a745" />
+                                                        <span>No security issues detected in this file</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : analysisState.results.vulnerabilities?.length > 0 ? (
+                                // Single file analysis results
                                 <div className="detailed-results">
                                     <h3>Detailed Findings</h3>
 
-                                    {analysisState.results.results.files.map((file, fileIndex) => (
-                                        <div key={fileIndex} className="file-result">
-                                            <div className="file-header">
-                                                <h4>{file.filename}</h4>
-                                                <span className="issue-count">
-                                                    {file.analysis.vulnerabilities?.length || 0} issues found
-                                                </span>
+                                    <div className="file-result">
+                                        <div className="file-header">
+                                            <div className="file-info">
+                                                <h4>{analysisState.results.metadata?.filename || 'Analyzed File'}</h4>
+                                                {analysisState.results.metadata?.language && (
+                                                    <span
+                                                        className="language-badge"
+                                                        style={{
+                                                            backgroundColor: getLanguageInfo(
+                                                                analysisState.results.metadata.filename || 'file.txt'
+                                                            ).color
+                                                        }}
+                                                    >
+                                                        {analysisState.results.metadata.language}
+                                                    </span>
+                                                )}
                                             </div>
+                                            <span className="issue-count">
+                                                {analysisState.results.vulnerabilities.length} issues found
+                                            </span>
+                                        </div>
 
-                                            {file.analysis.vulnerabilities?.length > 0 && (
-                                                <div className="vulnerabilities-list">
-                                                    {file.analysis.vulnerabilities.map((vuln, vulnIndex) => (
-                                                        <div key={vulnIndex} className="vulnerability-item">
-                                                            <div className="vuln-header">
-                                                                <span className="severity-badge" style={{
-                                                                    backgroundColor: vuln.severity === 'CRITICAL' ? '#dc3545' :
-                                                                        vuln.severity === 'HIGH' ? '#fd7e14' :
-                                                                            vuln.severity === 'MEDIUM' ? '#ffc107' : '#28a745'
-                                                                }}>
-                                                                    {vuln.severity}
+                                        <div className="vulnerabilities-list">
+                                            {analysisState.results.vulnerabilities
+                                                .sort((a, b) => {
+                                                    const severityOrder = { CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1 };
+                                                    return severityOrder[b.severity] - severityOrder[a.severity];
+                                                })
+                                                .map((vuln, vulnIndex) => (
+                                                    <div key={vulnIndex} className="vulnerability-item">
+                                                        <div className="vuln-header">
+                                                            <span className="vuln-icon">
+                                                                {getVulnIcon(vuln.vulnerability_type)}
+                                                            </span>
+                                                            <span
+                                                                className="severity-badge"
+                                                                style={{ backgroundColor: getSeverityColor(vuln.severity) }}
+                                                            >
+                                                                {vuln.severity}
+                                                            </span>
+                                                            <span className="vuln-type">
+                                                                {vuln.vulnerability_type.replace(/_/g, ' ')}
+                                                            </span>
+                                                            <span className="line-number">
+                                                                Line {vuln.line_number}
+                                                            </span>
+                                                            {vuln.confidence && (
+                                                                <span className="confidence">
+                                                                    {Math.round(vuln.confidence * 100)}% confidence
                                                                 </span>
-                                                                <span className="vuln-type">{vuln.vulnerability_type.replace('_', ' ')}</span>
-                                                                <span className="line-number">Line {vuln.line_number}</span>
-                                                            </div>
+                                                            )}
+                                                        </div>
 
-                                                            <div className="vuln-content">
-                                                                <p className="description">{vuln.description}</p>
+                                                        <div className="vuln-content">
+                                                            <p className="description">{vuln.description}</p>
 
-                                                                {vuln.code_snippet && (
-                                                                    <div className="code-snippet">
-                                                                        <h5>Vulnerable Code:</h5>
-                                                                        <pre><code>{vuln.code_snippet}</code></pre>
-                                                                    </div>
-                                                                )}
-
-                                                                <div className="fix-suggestion">
-                                                                    <h5>Recommended Fix:</h5>
-                                                                    <p>{vuln.fix_suggestion}</p>
+                                                            {vuln.code_snippet && (
+                                                                <div className="code-snippet">
+                                                                    <h5>Vulnerable Code:</h5>
+                                                                    <pre><code>{vuln.code_snippet}</code></pre>
                                                                 </div>
+                                                            )}
 
-                                                                <div className="confidence-score">
-                                                                    Confidence: {Math.round(vuln.confidence * 100)}%
-                                                                </div>
+                                                            <div className="fix-suggestion">
+                                                                <h5>
+                                                                    <Zap size={16} />
+                                                                    Recommended Fix:
+                                                                </h5>
+                                                                <p>{vuln.fix_suggestion}</p>
                                                             </div>
                                                         </div>
-                                                    ))}
-                                                </div>
-                                            )}
+                                                    </div>
+                                                ))}
                                         </div>
-                                    ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                // No vulnerabilities found
+                                <div className="no-results">
+                                    <CheckCircle size={48} color="#28a745" />
+                                    <h3>No Security Issues Detected</h3>
+                                    <p>Your code passed our security analysis. Great job!</p>
                                 </div>
                             )}
                         </div>
