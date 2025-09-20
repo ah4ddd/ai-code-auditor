@@ -406,3 +406,25 @@ class FileHandler:
 
         # If it's not definitely binary, assume it's text
         return ext not in definitely_binary
+
+    def _is_text_file_by_name(self, filename: str) -> bool:
+        """
+        Quick check if file is likely text-based by extension
+        Very permissive - only blocks obviously binary files
+        """
+        if not filename:
+            return True
+
+        _, ext = os.path.splitext(filename.lower())
+
+        # Only block clearly binary extensions
+        definitely_binary = {
+            '.exe', '.dll', '.so', '.dylib', '.bin', '.obj', '.o', '.a', '.lib',
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.ico',
+            '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.wav', '.ogg',
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+        }
+
+        # If it's not definitely binary, assume it's text
+        return ext not in definitely_binary
+

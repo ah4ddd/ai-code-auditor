@@ -16,7 +16,6 @@ import asyncio
 from datetime import datetime
 import shutil
 from dotenv import load_dotenv
-import os
 
 from app.services.gemini_analyzer import GeminiSecurityAnalyzer
 from app.utils.file_handler import FileHandler
@@ -31,7 +30,7 @@ if not GEMINI_API_KEY:
 
 app = FastAPI(
     title="AI Security Auditor",
-    description="Professional code security analysis powered by AI - Now supports 40+ languages",
+    description="Universal code security analysis powered by AI - Supports ALL programming languages",
     version="2.0.0"
 )
 
@@ -66,7 +65,7 @@ async def root():
         "message": "AI Security Auditor API",
         "status": "operational",
         "version": "2.0.0",
-        "supported_languages": "40+ programming languages"
+        "supported_languages": "Universal - ALL programming languages and text files"
     }
 
 @app.get("/health")
@@ -77,24 +76,8 @@ async def health_check():
         "gemini_api": "connected" if GEMINI_API_KEY else "missing"
     }
 
-@app.get("/api/languages")
-async def supported_languages():
-    """Get list of all supported programming languages"""
-    return {
-        "languages": list(file_handler.SUPPORTED_EXTENSIONS.keys()),
-        "count": len(file_handler.SUPPORTED_EXTENSIONS),
-        "categories": {
-            "backend": ["python", "java", "go", "rust", "csharp", "php", "ruby"],
-            "frontend": ["javascript", "typescript", "html", "css"],
-            "systems": ["c", "cpp", "rust", "assembly"],
-            "mobile": ["swift", "kotlin", "dart"],
-            "database": ["sql", "postgresql", "mysql"],
-            "devops": ["bash", "powershell", "dockerfile", "yaml"]
-        }
-    }
-
 # ============================================================================
-# ENHANCED FILE UPLOAD & ANALYSIS ENDPOINTS
+# UNIVERSAL FILE UPLOAD & ANALYSIS ENDPOINTS
 # ============================================================================
 
 @app.post("/api/analyze/file")
@@ -102,19 +85,18 @@ async def analyze_single_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...)
 ):
-    """Analyze a single code file - supports 40+ programming languages"""
+    """Analyze ANY text-based file - supports ALL programming languages and text formats"""
 
     print(f"📤 Received file: {file.filename} ({file.size} bytes)")
 
-    # Enhanced file validation - ACCEPTS ALL TEXT FILES
+    # Universal file validation - accepts ALL text files
     language = file_handler.get_file_language(file.filename)
-    # Note: get_file_language now NEVER returns None/False, always returns a string
 
-    # Only check if it's actually a text file (not binary)
+    # Only reject if it's truly a binary file
     if not file_handler._is_text_file_by_name(file.filename):
         raise HTTPException(
             status_code=400,
-            detail=f"File appears to be binary. We analyze text-based files including source code, scripts, config files, and any readable text format."
+            detail="File appears to be binary. We analyze any text-based file including source code, scripts, configs, and readable text formats."
         )
 
     # File size validation - increased for enterprise files
@@ -221,10 +203,10 @@ async def analyze_codebase(
             shutil.rmtree(temp_dir)
             raise HTTPException(
                 status_code=400,
-                detail="No supported code files found in archive"
+                detail="No text files found in archive"
             )
 
-        print(f"📁 Found {len(extracted_files)} code files to analyze")
+        print(f"📁 Found {len(extracted_files)} files to analyze")
 
         # Initialize analysis record
         analysis_storage[analysis_id] = {
@@ -567,6 +549,6 @@ def generate_recommendations(summary: Dict) -> List[str]:
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting AI Security Auditor API...")
-    print(f"📊 Supporting {len(file_handler.SUPPORTED_EXTENSIONS)} programming languages")
+    print("🚀 Starting Universal AI Security Auditor API...")
+    print("📊 Supporting ALL programming languages and text formats")
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

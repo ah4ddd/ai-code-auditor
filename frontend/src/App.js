@@ -15,72 +15,19 @@ function App() {
 
     const [dragActive, setDragActive] = useState(false);
 
-    // Comprehensive list of 40+ supported programming languages
-    const supportedExtensions = [
-        // Python
-        '.py', '.pyx', '.pyw', '.pyi',
-
-        // JavaScript/TypeScript/Node.js
-        '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.es6', '.es',
-
-        // Java & JVM languages
-        '.java', '.kt', '.kts', '.scala', '.sc', '.clj', '.cljs', '.groovy',
-
-        // C/C++
-        '.c', '.cpp', '.cc', '.cxx', '.c++', '.h', '.hpp', '.hh', '.hxx', '.h++',
-
-        // C# & .NET
-        '.cs', '.csx', '.vb', '.vbs', '.fs', '.fsx',
-
-        // Systems languages
-        '.go', '.rs', '.zig', '.nim', '.d',
-
-        // Web languages
-        '.php', '.php3', '.php4', '.php5', '.php7', '.phtml',
-        '.rb', '.rbw', '.rake', '.gemspec', '.erb',
-        '.swift',
-
-        // Functional languages
-        '.hs', '.lhs', '.ml', '.mli', '.ocaml', '.elm', '.ex', '.exs',
-        '.erl', '.hrl', '.lisp', '.lsp', '.scheme', '.scm',
-
-        // Scripting languages
-        '.pl', '.pm', '.perl', '.py3', '.pyw3',
-        '.r', '.R', '.rmd', '.Rmd',
-        '.lua', '.m', '.matlab',
-        '.dart', '.jl', '.cr',
-
-        // Shell scripts
-        '.sh', '.bash', '.zsh', '.fish', '.csh', '.tcsh', '.ksh', '.ps1', '.psm1', '.psd1',
-
-        // Database
-        '.sql', '.psql', '.mysql', '.sqlite', '.pgsql', '.plsql',
-
-        // Web templates & markup
-        '.html', '.htm', '.xhtml', '.xml', '.xsl', '.xslt',
-        '.jsp', '.jspx', '.asp', '.aspx', '.cshtml', '.vbhtml',
-        '.vue', '.svelte', '.astro',
-
-        // Assembly & low-level
-        '.asm', '.s', '.S', '.nasm', '.masm',
-
-        // Fortran & scientific
-        '.f', '.f77', '.f90', '.f95', '.f03', '.f08', '.for',
-
-        // Pascal & Ada
-        '.pas', '.pp', '.inc', '.ada', '.adb', '.ads',
-
-        // Other specialized languages
-        '.sol', '.move', '.cairo', '.yul', // Blockchain
-        '.proto', '.thrift', // Protocol buffers
-        '.tf', '.tfvars', // Terraform
-        '.dockerfile', '.containerfile', // Docker
-        '.makefile', '.mk', '.cmake', // Build systems
-        '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', // Config files
-
-        // Archives for codebase analysis
-        '.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2'
-    ];
+    // Universal file support - accepts ANY text-based file
+    // Only blocks truly binary files like images, videos, executables
+    const isBinaryFile = (filename) => {
+        const ext = '.' + filename.split('.').pop().toLowerCase();
+        const binaryExtensions = {
+            '.exe': true, '.dll': true, '.so': true, '.dylib': true, '.bin': true, '.obj': true, '.o': true, '.a': true, '.lib': true,
+            '.jpg': true, '.jpeg': true, '.png': true, '.gif': true, '.bmp': true, '.tiff': true, '.ico': true, '.svg': true,
+            '.mp3': true, '.mp4': true, '.avi': true, '.mov': true, '.wmv': true, '.flv': true, '.wav': true, '.ogg': true,
+            '.pdf': true, '.doc': true, '.docx': true, '.xls': true, '.xlsx': true, '.ppt': true, '.pptx': true,
+            '.zip': true, '.rar': true, '.7z': true, '.tar': true, '.gz': true, '.bz2': true // Archives handled separately
+        };
+        return binaryExtensions[ext] || false;
+    };
 
     // Language detection and metadata
     const getLanguageInfo = (filename) => {
@@ -256,19 +203,15 @@ function App() {
         const file = files[0];
         if (!file) return;
 
-        // Enhanced file validation
+        // Enhanced file validation - now accepts ANY text-based file
         const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
         const fileName = file.name.toLowerCase();
 
-        // Special filename checks
-        const isSpecialFile = fileName === 'dockerfile' || fileName === 'containerfile' ||
-            fileName === 'makefile' || fileName.endsWith('makefile') ||
-            fileName === 'cmakelists.txt';
-
-        if (!supportedExtensions.includes(fileExtension) && !isSpecialFile) {
+        // Check if it's a binary file (only block truly binary files)
+        if (isBinaryFile(fileName)) {
             setAnalysisState(prev => ({
                 ...prev,
-                error: `Unsupported file type: ${fileExtension}. We support 40+ languages including Python, JavaScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, Kotlin, and many more.`
+                error: `Binary files are not supported. Please upload text-based files like code, configuration, documentation, or data files.`
             }));
             return;
         }
@@ -449,7 +392,7 @@ function App() {
                         <Shield size={32} />
                         <h1>AI Security Auditor</h1>
                     </div>
-                    <p className="tagline">Professional security analysis for 40+ programming languages powered by AI</p>
+                    <p className="tagline">Universal security analysis for ANY text-based file powered by AI</p>
                 </div>
             </header>
 
@@ -466,7 +409,7 @@ function App() {
                             >
                                 <Upload size={48} />
                                 <h2>Upload Code for Security Analysis</h2>
-                                <p>Supports 40+ programming languages including Python, JavaScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, and more</p>
+                                <p>Supports ANY text-based file including code, configuration, documentation, data files, and more</p>
 
                                 <input
                                     type="file"
@@ -481,44 +424,40 @@ function App() {
                                 </label>
 
                                 <div className="supported-formats">
-                                    <p><strong>Languages We Support:</strong></p>
+                                    <p><strong>File Types We Support:</strong></p>
                                     <div className="format-tags">
-                                        <span style={{ backgroundColor: '#3776ab', color: 'white' }}>Python</span>
-                                        <span style={{ backgroundColor: '#f7df1e', color: 'black' }}>JavaScript</span>
-                                        <span style={{ backgroundColor: '#007acc', color: 'white' }}>TypeScript</span>
-                                        <span style={{ backgroundColor: '#ed8b00', color: 'white' }}>Java</span>
-                                        <span style={{ backgroundColor: '#00599c', color: 'white' }}>C++</span>
-                                        <span style={{ backgroundColor: '#00add8', color: 'white' }}>Go</span>
-                                        <span style={{ backgroundColor: '#dea584', color: 'black' }}>Rust</span>
-                                        <span style={{ backgroundColor: '#777bb4', color: 'white' }}>PHP</span>
-                                        <span style={{ backgroundColor: '#cc342d', color: 'white' }}>Ruby</span>
-                                        <span style={{ backgroundColor: '#fa7343', color: 'white' }}>Swift</span>
-                                        <span style={{ backgroundColor: '#239120', color: 'white' }}>C#</span>
-                                        <span style={{ backgroundColor: '#7f52ff', color: 'white' }}>Kotlin</span>
-                                        <span style={{ backgroundColor: '#5e5086', color: 'white' }}>Haskell</span>
-                                        <span style={{ backgroundColor: '#0175c2', color: 'white' }}>Dart</span>
-                                        <span style={{ backgroundColor: '#623ce4', color: 'white' }}>Terraform</span>
-                                        <span style={{ backgroundColor: '#6c757d', color: 'white' }}>+25 more</span>
+                                        <span style={{ backgroundColor: '#3776ab', color: 'white' }}>Code Files</span>
+                                        <span style={{ backgroundColor: '#f7df1e', color: 'black' }}>JSON/Config</span>
+                                        <span style={{ backgroundColor: '#007acc', color: 'white' }}>Documentation</span>
+                                        <span style={{ backgroundColor: '#ed8b00', color: 'white' }}>Data Files</span>
+                                        <span style={{ backgroundColor: '#00599c', color: 'white' }}>Scripts</span>
+                                        <span style={{ backgroundColor: '#00add8', color: 'white' }}>Logs</span>
+                                        <span style={{ backgroundColor: '#dea584', color: 'black' }}>Markdown</span>
+                                        <span style={{ backgroundColor: '#777bb4', color: 'white' }}>XML/YAML</span>
+                                        <span style={{ backgroundColor: '#cc342d', color: 'white' }}>CSV/TSV</span>
+                                        <span style={{ backgroundColor: '#fa7343', color: 'white' }}>Text Files</span>
+                                        <span style={{ backgroundColor: '#239120', color: 'white' }}>Archives</span>
+                                        <span style={{ backgroundColor: '#7f52ff', color: 'white' }}>Any Text</span>
                                     </div>
 
                                     <div className="categories">
                                         <div className="category-group">
-                                            <strong>Backend:</strong> Python, Java, Go, Rust, C#, PHP, Ruby, Node.js
+                                            <strong>Programming:</strong> Python, JavaScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, Kotlin, and 50+ more
                                         </div>
                                         <div className="category-group">
-                                            <strong>Frontend:</strong> JavaScript, TypeScript, React, Vue, Svelte
+                                            <strong>Configuration:</strong> JSON, YAML, TOML, INI, XML, ENV files
                                         </div>
                                         <div className="category-group">
-                                            <strong>Systems:</strong> C, C++, Rust, Zig, Assembly, Fortran
+                                            <strong>Documentation:</strong> Markdown, RST, TXT, README files
                                         </div>
                                         <div className="category-group">
-                                            <strong>Mobile:</strong> Swift, Kotlin, Dart, Java, C#
+                                            <strong>Data:</strong> CSV, TSV, LOG, SQL, SPARQL, GraphQL
                                         </div>
                                         <div className="category-group">
-                                            <strong>DevOps:</strong> Shell, PowerShell, Terraform, Docker, YAML
+                                            <strong>Archives:</strong> ZIP, TAR, GZ files for codebase analysis
                                         </div>
                                         <div className="category-group">
-                                            <strong>Blockchain:</strong> Solidity, Move, Cairo
+                                            <strong>Universal:</strong> ANY text-based file that contains readable content
                                         </div>
                                     </div>
                                 </div>
@@ -538,7 +477,7 @@ function App() {
                             <div className="progress-content">
                                 <div className="spinner"></div>
                                 <h2>Analyzing Your Code</h2>
-                                <p>AI is scanning for security vulnerabilities with language-specific analysis patterns...</p>
+                                <p>AI is scanning for security vulnerabilities across all file types and content...</p>
 
                                 <div className="progress-bar">
                                     <div
