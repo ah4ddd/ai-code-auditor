@@ -19,6 +19,8 @@ from dotenv import load_dotenv
 
 from app.services.gemini_analyzer import GeminiSecurityAnalyzer
 from app.utils.file_handler import FileHandler
+from app.services.github_integration import GitHubIntegration
+from app.tasks.repository_tasks import scan_repository_task
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +51,7 @@ security = HTTPBearer()
 # Global instances
 analyzer = GeminiSecurityAnalyzer(GEMINI_API_KEY)
 file_handler = FileHandler()
+github_integration = GitHubIntegration()
 
 # In-memory storage for demo (use Redis/DB in production)
 analysis_storage = {}
@@ -436,6 +439,138 @@ async def analyze_codebase_background(
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
+async def analyze_repository_background(
+    analysis_id: str,
+    repo_url: str,
+    branch: str,
+    github_token: str = None
+):
+    """Background repository analysis without Celery"""
+
+    temp_dir = None
+
+    try:
+        print(f"🔍 Starting repository analysis: {repo_url}")
+
+        # Update progress
+        analysis_storage[analysis_id]['progress'] = 10
+
+        # Clone repository
+        temp_dir, repo_name = await github_integration.clone_repository(repo_url, branch)
+
+        # Update progress
+        analysis_storage[analysis_id]['progress'] = 30
+
+        # Discover files
+        files = await github_integration.discover_files(temp_dir)
+
+        if not files:
+            analysis_storage[analysis_id]['status'] = AnalysisStatus.COMPLETED
+            analysis_storage[analysis_id]['results'] = {
+                'files': [],
+                'overall_summary': {
+                    'total_vulnerabilities': 0,
+                    'critical_count': 0,
+                    'high_count': 0,
+                    'medium_count': 0,
+                    'low_count': 0,
+                    'info_count': 0,
+                    'total_files_analyzed': 0,
+                    'languages_detected': []
+                }
+            }
+            analysis_storage[analysis_id]['progress'] = 100
+            return
+
+        print(f"📁 Found {len(files)} files to analyze")
+
+        # Update progress
+        analysis_storage[analysis_id]['progress'] = 50
+
+        # Analyze files
+        results = []
+        total_vulns = 0
+        severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+        languages_found = set()
+
+        for i, file_info in enumerate(files):
+            try:
+                # Update progress
+                progress = 50 + int((i / len(files)) * 40)  # 50-90%
+                analysis_storage[analysis_id]['progress'] = progress
+
+                print(f"   📄 Analyzing {file_info['filename']} ({i+1}/{len(files)})")
+
+                # Read file content
+                content = await github_integration.get_file_content(file_info['full_path'])
+
+                if len(content.strip()) < 10:
+                    continue
+
+                # Analyze with Gemini
+                result = analyzer.analyze_code(content, file_info['filename'], file_info['language'])
+
+                if not result.get('error'):
+                    results.append({
+                        'filename': file_info['path'],
+                        'analysis': result
+                    })
+
+                    # Aggregate statistics
+                    vulns = result.get('vulnerabilities', [])
+                    total_vulns += len(vulns)
+
+                    for vuln in vulns:
+                        sev = vuln['severity'].lower()
+                        if sev in severity_counts:
+                            severity_counts[sev] += 1
+
+                    # Track languages
+                    if file_info['language']:
+                        languages_found.add(file_info['language'])
+
+                # Rate limiting
+                await asyncio.sleep(1)
+
+            except Exception as file_error:
+                print(f"   ⚠️ Failed to analyze {file_info['filename']}: {str(file_error)}")
+                continue
+
+        # Update progress
+        analysis_storage[analysis_id]['progress'] = 95
+
+        # Compile final results
+        final_results = {
+            'files': results,
+            'overall_summary': {
+                'total_files_analyzed': len(results),
+                'total_files_discovered': len(files),
+                'total_vulnerabilities': total_vulns,
+                'critical_count': severity_counts['critical'],
+                'high_count': severity_counts['high'],
+                'medium_count': severity_counts['medium'],
+                'low_count': severity_counts['low'],
+                'info_count': severity_counts['info'],
+                'languages_detected': list(languages_found)
+            }
+        }
+
+        analysis_storage[analysis_id]['status'] = AnalysisStatus.COMPLETED
+        analysis_storage[analysis_id]['results'] = final_results
+        analysis_storage[analysis_id]['progress'] = 100
+
+        print(f"✅ Repository analysis completed: {total_vulns} vulnerabilities found")
+
+    except Exception as e:
+        print(f"❌ Repository analysis failed: {str(e)}")
+        analysis_storage[analysis_id]['status'] = AnalysisStatus.FAILED
+        analysis_storage[analysis_id]['error'] = str(e)
+
+    finally:
+        # Cleanup
+        if temp_dir:
+            await github_integration.cleanup_repository(temp_dir)
+
 # ============================================================================
 # ENHANCED UTILITY FUNCTIONS
 # ============================================================================
@@ -478,19 +613,30 @@ def generate_summary(results: Dict) -> Dict:
     summary = results.get('overall_summary', {})
     files = results.get('files', [])
 
-    # Calculate risk level
+    # Calculate risk level based on actual vulnerability counts
     critical = summary.get('critical_count', 0)
     high = summary.get('high_count', 0)
     medium = summary.get('medium_count', 0)
+    low = summary.get('low_count', 0)
+    info = summary.get('info_count', 0)
 
+    # More accurate risk assessment based on severity and count
     if critical > 0:
         risk_level = "CRITICAL"
-    elif high > 3:
+    elif critical == 0 and high >= 2:  # 2+ high severity issues = HIGH risk
         risk_level = "HIGH"
-    elif high > 0 or medium > 5:
+    elif critical == 0 and high == 1 and medium >= 3:  # 1 high + 3+ medium = HIGH risk
+        risk_level = "HIGH"
+    elif critical == 0 and high == 1:  # 1 high severity = MEDIUM risk
         risk_level = "MEDIUM"
-    else:
+    elif critical == 0 and high == 0 and medium >= 5:  # 5+ medium = MEDIUM risk
+        risk_level = "MEDIUM"
+    elif critical == 0 and high == 0 and medium >= 2:  # 2-4 medium = LOW risk
         risk_level = "LOW"
+    elif critical == 0 and high == 0 and medium == 1 and low >= 3:  # 1 medium + 3+ low = LOW risk
+        risk_level = "LOW"
+    else:
+        risk_level = "MINIMAL"
 
     # Get most common vulnerabilities
     vuln_counts = {}
@@ -544,6 +690,252 @@ def generate_recommendations(summary: Dict) -> List[str]:
         recommendations.append("✅ Good security posture! Continue regular security reviews")
 
     recommendations.append("🛡️ Consider implementing static analysis tools like SonarQube or Checkmarx")
+
+    return recommendations
+
+# ============================================================================
+# REPOSITORY SCANNING ENDPOINTS
+# ============================================================================
+
+@app.post("/api/analyze/repository")
+async def analyze_repository(
+    background_tasks: BackgroundTasks,
+    repo_url: str,
+    branch: str = "main",
+    github_token: str = None
+):
+    """Analyze entire repository for security vulnerabilities"""
+
+    try:
+        # Validate repository URL
+        if not repo_url or not any(domain in repo_url for domain in ['github.com', 'gitlab.com', 'bitbucket.org']):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid repository URL. Supported: GitHub, GitLab, Bitbucket"
+            )
+
+        # Get repository information
+        try:
+            repo_info = await github_integration.get_repository_info(repo_url)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to access repository: {str(e)}"
+            )
+
+        # Create analysis job
+        analysis_id = str(uuid.uuid4())
+
+        # For now, run repository scanning synchronously (without Celery)
+        # In production, you would use: task = scan_repository_task.delay(repo_url, branch, github_token)
+
+        # Store analysis record
+        analysis_storage[analysis_id] = {
+            'id': analysis_id,
+            'type': 'repository',
+            'repo_url': repo_url,
+            'branch': branch,
+            'repo_info': repo_info,
+            'status': AnalysisStatus.PROCESSING,
+            'created_at': datetime.now().isoformat(),
+            'task_id': None,  # No Celery task for now
+            'results': None,
+            'error': None,
+            'progress': 0
+        }
+
+        # Start background repository analysis
+        background_tasks.add_task(
+            analyze_repository_background,
+            analysis_id,
+            repo_url,
+            branch,
+            github_token
+        )
+
+        print(f"🚀 Repository analysis started: {repo_info['name']} (ID: {analysis_id})")
+
+        return JSONResponse({
+            'analysis_id': analysis_id,
+            'status': 'processing',
+            'message': f'Repository analysis started for {repo_info["name"]}',
+            'repository': repo_info['name'],
+            'branch': branch,
+            'languages': repo_info['languages'],
+            'estimated_time': f'{repo_info["size"] // 1000} seconds'
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Repository analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Repository analysis failed: {str(e)}")
+
+@app.get("/api/analyze/repository/{analysis_id}/status")
+async def get_repository_analysis_status(analysis_id: str):
+    """Get repository analysis status"""
+
+    if analysis_id not in analysis_storage:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    analysis = analysis_storage[analysis_id]
+
+    if analysis['type'] != 'repository':
+        raise HTTPException(status_code=400, detail="Not a repository analysis")
+
+    # Check analysis status (without Celery for now)
+    if analysis['status'] == AnalysisStatus.PROCESSING:
+        status = 'processing'
+        progress = analysis.get('progress', 0)
+        message = 'Repository analysis in progress...'
+    elif analysis['status'] == AnalysisStatus.COMPLETED:
+        status = 'completed'
+        progress = 100
+        message = 'Analysis completed'
+    elif analysis['status'] == AnalysisStatus.FAILED:
+        status = 'failed'
+        progress = 0
+        message = analysis.get('error', 'Analysis failed')
+    else:
+        status = 'processing'
+        progress = 0
+        message = 'Processing...'
+
+    return {
+        'analysis_id': analysis_id,
+        'status': status,
+        'progress': progress,
+        'message': message,
+        'repository': analysis['repo_info']['name'],
+        'branch': analysis['branch']
+    }
+
+@app.get("/api/analyze/repository/{analysis_id}/results")
+async def get_repository_analysis_results(analysis_id: str):
+    """Get repository analysis results"""
+
+    if analysis_id not in analysis_storage:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    analysis = analysis_storage[analysis_id]
+
+    if analysis['type'] != 'repository':
+        raise HTTPException(status_code=400, detail="Not a repository analysis")
+
+    if analysis['status'] == AnalysisStatus.PROCESSING:
+        raise HTTPException(status_code=202, detail="Analysis still in progress")
+
+    if analysis['status'] == AnalysisStatus.FAILED:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analysis failed: {analysis.get('error', 'Unknown error')}"
+        )
+
+    if not analysis['results']:
+        raise HTTPException(status_code=404, detail="Results not available")
+
+    # Generate summary
+    results = analysis['results']
+    summary = generate_repository_summary(results)
+
+    return {
+        'analysis_id': analysis_id,
+        'status': analysis['status'],
+        'repository': analysis['repo_info'],
+        'results': results,
+        'summary': summary,
+        'metadata': {
+            'analyzed_at': analysis['created_at'],
+            'branch': analysis['branch'],
+            'total_time': calculate_total_time(analysis)
+        }
+    }
+
+def generate_repository_summary(results: Dict) -> Dict:
+    """Generate repository analysis summary"""
+    if not results:
+        return {}
+
+    overall_summary = results.get('overall_summary', {})
+    files = results.get('files', [])
+
+    # Calculate risk level
+    critical = overall_summary.get('critical_count', 0)
+    high = overall_summary.get('high_count', 0)
+    medium = overall_summary.get('medium_count', 0)
+    low = overall_summary.get('low_count', 0)
+    info = overall_summary.get('info_count', 0)
+
+    if critical > 0:
+        risk_level = "CRITICAL"
+    elif critical == 0 and high >= 5:
+        risk_level = "HIGH"
+    elif critical == 0 and high >= 2:
+        risk_level = "MEDIUM"
+    elif critical == 0 and high == 1 and medium >= 5:
+        risk_level = "MEDIUM"
+    elif critical == 0 and high == 1:
+        risk_level = "LOW"
+    elif critical == 0 and high == 0 and medium >= 10:
+        risk_level = "LOW"
+    else:
+        risk_level = "MINIMAL"
+
+    # Get most common vulnerabilities
+    vuln_counts = {}
+    for file_result in files:
+        for vuln in file_result.get('analysis', {}).get('vulnerabilities', []):
+            vuln_type = vuln['vulnerability_type']
+            vuln_counts[vuln_type] = vuln_counts.get(vuln_type, 0) + 1
+
+    most_common = sorted(vuln_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    return {
+        'risk_level': risk_level,
+        'total_issues': overall_summary.get('total_vulnerabilities', 0),
+        'files_analyzed': overall_summary.get('total_files_analyzed', 0),
+        'files_discovered': overall_summary.get('total_files_discovered', 0),
+        'languages_detected': overall_summary.get('languages_detected', []),
+        'most_common_issues': [vuln_type for vuln_type, count in most_common],
+        'severity_breakdown': {
+            'critical': critical,
+            'high': high,
+            'medium': medium,
+            'low': low,
+            'info': info
+        },
+        'vulnerability_types': overall_summary.get('vulnerability_types', {}),
+        'recommendations': generate_repository_recommendations(overall_summary)
+    }
+
+def generate_repository_recommendations(summary: Dict) -> List[str]:
+    """Generate repository-level recommendations"""
+    recommendations = []
+
+    critical = summary.get('critical_count', 0)
+    high = summary.get('high_count', 0)
+    medium = summary.get('medium_count', 0)
+    total_files = summary.get('total_files_analyzed', 0)
+
+    if critical > 0:
+        recommendations.append("🚨 URGENT: Address CRITICAL vulnerabilities immediately - they pose immediate security risk")
+
+    if high > 0:
+        recommendations.append("⚡ Fix HIGH severity issues within 24-48 hours")
+
+    if medium > 10:
+        recommendations.append("📋 Plan remediation for MEDIUM severity issues in next development cycle")
+
+    if critical + high + medium > 0:
+        recommendations.append("🔄 Implement automated security scanning in CI/CD pipeline")
+        recommendations.append("📚 Conduct security code review training for development team")
+        recommendations.append("🛡️ Consider implementing static analysis tools like SonarQube or Checkmarx")
+
+    if total_files > 100:
+        recommendations.append("📊 Consider implementing incremental scanning for large repositories")
+
+    if len(recommendations) == 0:
+        recommendations.append("✅ Good security posture! Continue regular security reviews")
 
     return recommendations
 

@@ -13,6 +13,11 @@ function App() {
         progress: 0
     });
 
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [scanMode, setScanMode] = useState('files'); // 'files' or 'repository'
+    const [repoUrl, setRepoUrl] = useState('');
+    const [repoBranch, setRepoBranch] = useState('main');
+
     const [dragActive, setDragActive] = useState(false);
 
     // Universal file support - accepts ANY text-based file
@@ -200,34 +205,50 @@ function App() {
     };
 
     const handleFileUpload = useCallback(async (files) => {
-        const file = files[0];
-        if (!file) return;
+        if (!files || files.length === 0) return;
 
-        // Enhanced file validation - now accepts ANY text-based file
-        const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
-        const fileName = file.name.toLowerCase();
+        // Handle multiple files
+        const fileList = Array.from(files);
 
-        // Check if it's a binary file (only block truly binary files)
-        if (isBinaryFile(fileName)) {
+        // Validate all files
+        const validFiles = [];
+        const errors = [];
+
+        for (const file of fileList) {
+            // Check if it's a binary file (only block truly binary files)
+            if (isBinaryFile(file.name)) {
+                errors.push(`${file.name}: Binary files are not supported`);
+                continue;
+            }
+
+            // File size validation
+            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+            const maxSize = fileExtension.includes('zip') || fileExtension.includes('tar') ?
+                100 * 1024 * 1024 : // 100MB for archives
+                10 * 1024 * 1024;   // 10MB for source files
+
+            if (file.size > maxSize) {
+                errors.push(`${file.name}: File too large (max ${fileExtension.includes('zip') || fileExtension.includes('tar') ? '100MB' : '10MB'})`);
+                continue;
+            }
+
+            validFiles.push(file);
+        }
+
+        if (validFiles.length === 0) {
             setAnalysisState(prev => ({
                 ...prev,
-                error: `Binary files are not supported. Please upload text-based files like code, configuration, documentation, or data files.`
+                error: errors.length > 0 ? errors.join('; ') : 'No valid files selected'
             }));
             return;
         }
 
-        // File size validation (increased limits for different file types)
-        const maxSize = fileExtension.includes('zip') || fileExtension.includes('tar') ?
-            100 * 1024 * 1024 : // 100MB for archives
-            10 * 1024 * 1024;   // 10MB for source files
-
-        if (file.size > maxSize) {
-            setAnalysisState(prev => ({
-                ...prev,
-                error: `File too large. Maximum size: ${fileExtension.includes('zip') || fileExtension.includes('tar') ? '100MB' : '10MB'}`
-            }));
-            return;
+        if (errors.length > 0) {
+            console.warn('Some files were skipped:', errors);
         }
+
+        // Store selected files for display
+        setSelectedFiles(validFiles);
 
         // Start analysis
         setAnalysisState({
@@ -239,34 +260,51 @@ function App() {
         });
 
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-
-            // Choose endpoint based on file type
-            const isArchive = fileExtension.includes('zip') || fileExtension.includes('tar');
-            const endpoint = isArchive ? '/api/analyze/codebase' : '/api/analyze/file';
-
-            console.log(`🚀 Uploading ${file.name} (${(file.size / 1024).toFixed(1)}KB) for analysis`);
-
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                method: 'POST',
-                body: formData
+            // Check if any files are archives
+            const hasArchives = validFiles.some(file => {
+                const ext = '.' + file.name.split('.').pop().toLowerCase();
+                return ext.includes('zip') || ext.includes('tar');
             });
 
-            if (!response.ok) {
-                throw new Error(`Upload failed: ${response.statusText}`);
+            if (hasArchives && validFiles.length > 1) {
+                setAnalysisState(prev => ({
+                    ...prev,
+                    isAnalyzing: false,
+                    error: 'Cannot mix archive files with individual files. Please upload either archives OR individual files.'
+                }));
+                return;
             }
 
-            const uploadResult = await response.json();
+            if (hasArchives) {
+                // Handle single archive file
+                const file = validFiles[0];
+                const formData = new FormData();
+                formData.append('file', file);
 
-            setAnalysisState(prev => ({
-                ...prev,
-                currentAnalysis: uploadResult.analysis_id,
-                progress: 15
-            }));
+                console.log(`🚀 Uploading archive ${file.name} (${(file.size / 1024).toFixed(1)}KB) for analysis`);
 
-            // Poll for results with enhanced progress tracking
-            pollAnalysisStatus(uploadResult.analysis_id);
+                const response = await fetch(`${API_BASE_URL}/api/analyze/codebase`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Upload failed: ${response.statusText}`);
+                }
+
+                const uploadResult = await response.json();
+
+                setAnalysisState(prev => ({
+                    ...prev,
+                    currentAnalysis: uploadResult.analysis_id,
+                    progress: 15
+                }));
+
+                pollAnalysisStatus(uploadResult.analysis_id);
+            } else {
+                // Handle multiple individual files
+                await analyzeMultipleFiles(validFiles);
+            }
 
         } catch (error) {
             console.error('Upload error:', error);
@@ -276,6 +314,348 @@ function App() {
                 error: error.message
             }));
         }
+    }, []);
+
+    const analyzeMultipleFiles = useCallback(async (files) => {
+        try {
+            console.log(`🚀 Analyzing ${files.length} files...`);
+
+            const allResults = {
+                files: [],
+                overall_summary: {
+                    total_vulnerabilities: 0,
+                    critical_count: 0,
+                    high_count: 0,
+                    medium_count: 0,
+                    low_count: 0,
+                    info_count: 0,
+                    total_files_analyzed: files.length,
+                    languages_detected: []
+                }
+            };
+
+            const languagesFound = new Set();
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+
+                // Update progress
+                const progress = Math.round((i / files.length) * 80) + 10; // 10-90%
+                setAnalysisState(prev => ({
+                    ...prev,
+                    progress: progress
+                }));
+
+                console.log(`📄 Analyzing ${file.name} (${i + 1}/${files.length})`);
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${API_BASE_URL}/api/analyze/file`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    console.error(`Failed to analyze ${file.name}: ${response.statusText}`);
+                    continue;
+                }
+
+                const uploadResult = await response.json();
+
+                // Wait for analysis to complete
+                const analysisResult = await waitForAnalysis(uploadResult.analysis_id);
+
+                if (analysisResult && analysisResult.results) {
+                    const fileResult = analysisResult.results.files[0];
+                    if (fileResult) {
+                        allResults.files.push(fileResult);
+
+                        // Aggregate statistics
+                        const vulns = fileResult.analysis.vulnerabilities || [];
+                        allResults.overall_summary.total_vulnerabilities += vulns.length;
+
+                        vulns.forEach(vuln => {
+                            const severity = vuln.severity.toLowerCase();
+                            if (severity in allResults.overall_summary) {
+                                allResults.overall_summary[severity + '_count']++;
+                            }
+                        });
+
+                        // Track languages
+                        const language = fileResult.analysis.metadata?.language;
+                        if (language) {
+                            languagesFound.add(language);
+                        }
+                    }
+                }
+
+                // Small delay between files to avoid overwhelming the API
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            allResults.overall_summary.languages_detected = Array.from(languagesFound);
+
+            // Generate summary
+            const summary = generateSummary(allResults);
+
+            setAnalysisState(prev => ({
+                ...prev,
+                isAnalyzing: false,
+                results: {
+                    analysis_id: `multi-${Date.now()}`,
+                    status: 'completed',
+                    results: allResults,
+                    summary: summary,
+                    metadata: {
+                        analyzed_at: new Date().toISOString(),
+                        file_count: files.length,
+                        total_time: `${files.length * 2} seconds`
+                    }
+                },
+                progress: 100
+            }));
+
+            console.log(`✅ Multi-file analysis completed: ${allResults.overall_summary.total_vulnerabilities} vulnerabilities found`);
+
+        } catch (error) {
+            console.error('Multi-file analysis error:', error);
+            setAnalysisState(prev => ({
+                ...prev,
+                isAnalyzing: false,
+                error: error.message
+            }));
+        }
+    }, []);
+
+    const waitForAnalysis = useCallback(async (analysisId) => {
+        const maxAttempts = 60;
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+            try {
+                const statusResponse = await fetch(`${API_BASE_URL}/api/analyze/${analysisId}/status`);
+                if (!statusResponse.ok) {
+                    throw new Error('Failed to get analysis status');
+                }
+
+                const status = await statusResponse.json();
+
+                if (status.status === 'completed') {
+                    const resultsResponse = await fetch(`${API_BASE_URL}/api/analyze/${analysisId}/results`);
+                    if (resultsResponse.ok) {
+                        return await resultsResponse.json();
+                    }
+                } else if (status.status === 'failed') {
+                    throw new Error('Analysis failed');
+                }
+
+                attempts++;
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (error) {
+                console.error('Error waiting for analysis:', error);
+                throw error;
+            }
+        }
+
+        throw new Error('Analysis timeout');
+    }, []);
+
+    const generateSummary = useCallback((results) => {
+        const summary = results.overall_summary;
+        const critical = summary.critical_count || 0;
+        const high = summary.high_count || 0;
+        const medium = summary.medium_count || 0;
+        const low = summary.low_count || 0;
+
+        // Use the same risk assessment logic
+        let riskLevel;
+        if (critical > 0) {
+            riskLevel = 'CRITICAL';
+        } else if (critical === 0 && high >= 2) {
+            riskLevel = 'HIGH';
+        } else if (critical === 0 && high === 1 && medium >= 3) {
+            riskLevel = 'HIGH';
+        } else if (critical === 0 && high === 1) {
+            riskLevel = 'MEDIUM';
+        } else if (critical === 0 && high === 0 && medium >= 5) {
+            riskLevel = 'MEDIUM';
+        } else if (critical === 0 && high === 0 && medium >= 2) {
+            riskLevel = 'LOW';
+        } else if (critical === 0 && high === 0 && medium === 1 && low >= 3) {
+            riskLevel = 'LOW';
+        } else {
+            riskLevel = 'MINIMAL';
+        }
+
+        return {
+            risk_level: riskLevel,
+            total_issues: summary.total_vulnerabilities,
+            files_analyzed: summary.total_files_analyzed,
+            files_with_issues: results.files.filter(f => f.analysis.vulnerabilities?.length > 0).length,
+            languages_detected: summary.languages_detected,
+            severity_breakdown: {
+                critical: critical,
+                high: high,
+                medium: medium,
+                low: low,
+                info: summary.info_count || 0
+            },
+            recommendations: generateRecommendations(summary)
+        };
+    }, []);
+
+    const generateRecommendations = useCallback((summary) => {
+        const recommendations = [];
+        const critical = summary.critical_count || 0;
+        const high = summary.high_count || 0;
+        const medium = summary.medium_count || 0;
+
+        if (critical > 0) {
+            recommendations.push("🚨 URGENT: Address CRITICAL vulnerabilities immediately - they pose immediate security risk");
+        }
+        if (high > 0) {
+            recommendations.push("⚡ Fix HIGH severity issues within 24-48 hours");
+        }
+        if (medium > 3) {
+            recommendations.push("📋 Plan remediation for MEDIUM severity issues in next development cycle");
+        }
+        if (critical + high + medium > 0) {
+            recommendations.push("🔄 Implement automated security scanning in CI/CD pipeline");
+            recommendations.push("📚 Conduct security code review training for development team");
+        }
+        if (recommendations.length === 0) {
+            recommendations.push("✅ Good security posture! Continue regular security reviews");
+        }
+        recommendations.push("🛡️ Consider implementing static analysis tools like SonarQube or Checkmarx");
+
+        return recommendations;
+    }, []);
+
+    const handleRepositoryScan = useCallback(async () => {
+        if (!repoUrl.trim()) {
+            setAnalysisState(prev => ({
+                ...prev,
+                error: 'Please enter a repository URL'
+            }));
+            return;
+        }
+
+        // Validate repository URL
+        const supportedDomains = ['github.com', 'gitlab.com', 'bitbucket.org'];
+        if (!supportedDomains.some(domain => repoUrl.includes(domain))) {
+            setAnalysisState(prev => ({
+                ...prev,
+                error: 'Unsupported repository. Please use GitHub, GitLab, or Bitbucket.'
+            }));
+            return;
+        }
+
+        setAnalysisState({
+            isAnalyzing: true,
+            currentAnalysis: null,
+            results: null,
+            error: null,
+            progress: 0
+        });
+
+        try {
+            console.log(`🚀 Starting repository scan: ${repoUrl} (branch: ${repoBranch})`);
+
+            const response = await fetch(`${API_BASE_URL}/api/analyze/repository`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    repo_url: repoUrl,
+                    branch: repoBranch
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Repository scan failed: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+
+            setAnalysisState(prev => ({
+                ...prev,
+                currentAnalysis: result.analysis_id,
+                progress: 10
+            }));
+
+            // Poll for results
+            pollRepositoryAnalysisStatus(result.analysis_id);
+
+        } catch (error) {
+            console.error('Repository scan error:', error);
+            setAnalysisState(prev => ({
+                ...prev,
+                isAnalyzing: false,
+                error: error.message
+            }));
+        }
+    }, [repoUrl, repoBranch]);
+
+    const pollRepositoryAnalysisStatus = useCallback(async (analysisId) => {
+        const maxAttempts = 300; // 5 minutes for repository scanning
+        let attempts = 0;
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/analyze/repository/${analysisId}/status`);
+                if (!response.ok) {
+                    throw new Error('Failed to get analysis status');
+                }
+
+                const status = await response.json();
+
+                setAnalysisState(prev => ({
+                    ...prev,
+                    progress: status.progress || 0
+                }));
+
+                if (status.status === 'completed') {
+                    // Get results
+                    const resultsResponse = await fetch(`${API_BASE_URL}/api/analyze/repository/${analysisId}/results`);
+                    if (resultsResponse.ok) {
+                        const results = await resultsResponse.json();
+                        setAnalysisState(prev => ({
+                            ...prev,
+                            isAnalyzing: false,
+                            results: results,
+                            progress: 100
+                        }));
+                        console.log(`✅ Repository analysis completed: ${results.summary.total_issues} vulnerabilities found`);
+                    }
+                } else if (status.status === 'failed') {
+                    setAnalysisState(prev => ({
+                        ...prev,
+                        isAnalyzing: false,
+                        error: status.message || 'Repository analysis failed'
+                    }));
+                } else if (attempts < maxAttempts) {
+                    attempts++;
+                    setTimeout(poll, 2000); // Poll every 2 seconds
+                } else {
+                    setAnalysisState(prev => ({
+                        ...prev,
+                        isAnalyzing: false,
+                        error: 'Repository analysis timeout'
+                    }));
+                }
+            } catch (error) {
+                console.error('Error polling repository analysis status:', error);
+                setAnalysisState(prev => ({
+                    ...prev,
+                    isAnalyzing: false,
+                    error: error.message
+                }));
+            }
+        };
+
+        poll();
     }, []);
 
     const pollAnalysisStatus = useCallback(async (analysisId) => {
@@ -400,68 +780,183 @@ function App() {
                 <div className="container">
                     {!analysisState.results && !analysisState.isAnalyzing && (
                         <div className="upload-section">
-                            <div
-                                className={`upload-area ${dragActive ? 'drag-active' : ''}`}
-                                onDragEnter={handleDrag}
-                                onDragLeave={handleDrag}
-                                onDragOver={handleDrag}
-                                onDrop={handleDrop}
-                            >
-                                <Upload size={48} />
-                                <h2>Upload Code for Security Analysis</h2>
-                                <p>Supports ANY text-based file including code, configuration, documentation, data files, and more</p>
-
-                                <input
-                                    type="file"
-                                    id="file-upload"
-                                    className="file-input"
-                                    onChange={(e) => handleFileUpload(e.target.files)}
-                                />
-
-                                <label htmlFor="file-upload" className="upload-button">
+                            {/* Mode Selector */}
+                            <div className="mode-selector">
+                                <button
+                                    className={`mode-btn ${scanMode === 'files' ? 'active' : ''}`}
+                                    onClick={() => setScanMode('files')}
+                                >
+                                    <FileText size={20} />
+                                    Upload Files
+                                </button>
+                                <button
+                                    className={`mode-btn ${scanMode === 'repository' ? 'active' : ''}`}
+                                    onClick={() => setScanMode('repository')}
+                                >
                                     <Code2 size={20} />
-                                    Choose Files or ZIP Archives
-                                </label>
+                                    Scan Repository
+                                </button>
+                            </div>
 
-                                <div className="supported-formats">
-                                    <p><strong>File Types We Support:</strong></p>
-                                    <div className="format-tags">
-                                        <span style={{ backgroundColor: '#3776ab', color: 'white' }}>Code Files</span>
-                                        <span style={{ backgroundColor: '#f7df1e', color: 'black' }}>JSON/Config</span>
-                                        <span style={{ backgroundColor: '#007acc', color: 'white' }}>Documentation</span>
-                                        <span style={{ backgroundColor: '#ed8b00', color: 'white' }}>Data Files</span>
-                                        <span style={{ backgroundColor: '#00599c', color: 'white' }}>Scripts</span>
-                                        <span style={{ backgroundColor: '#00add8', color: 'white' }}>Logs</span>
-                                        <span style={{ backgroundColor: '#dea584', color: 'black' }}>Markdown</span>
-                                        <span style={{ backgroundColor: '#777bb4', color: 'white' }}>XML/YAML</span>
-                                        <span style={{ backgroundColor: '#cc342d', color: 'white' }}>CSV/TSV</span>
-                                        <span style={{ backgroundColor: '#fa7343', color: 'white' }}>Text Files</span>
-                                        <span style={{ backgroundColor: '#239120', color: 'white' }}>Archives</span>
-                                        <span style={{ backgroundColor: '#7f52ff', color: 'white' }}>Any Text</span>
-                                    </div>
+                            {scanMode === 'files' ? (
+                                <div
+                                    className={`upload-area ${dragActive ? 'drag-active' : ''}`}
+                                    onDragEnter={handleDrag}
+                                    onDragLeave={handleDrag}
+                                    onDragOver={handleDrag}
+                                    onDrop={handleDrop}
+                                >
+                                    <Upload size={48} />
+                                    <h2>Upload Code for Security Analysis</h2>
+                                    <p>Supports ANY text-based file including code, configuration, documentation, data files, and more</p>
 
-                                    <div className="categories">
-                                        <div className="category-group">
-                                            <strong>Programming:</strong> Python, JavaScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, Kotlin, and 50+ more
+                                    <input
+                                        type="file"
+                                        id="file-upload"
+                                        className="file-input"
+                                        multiple
+                                        onChange={(e) => handleFileUpload(e.target.files)}
+                                    />
+
+                                    <label htmlFor="file-upload" className="upload-button">
+                                        <Code2 size={20} />
+                                        Choose Multiple Files or ZIP Archives
+                                    </label>
+
+                                    <div className="supported-formats">
+                                        <p><strong>File Types We Support:</strong></p>
+                                        <div className="format-tags">
+                                            <span style={{ backgroundColor: '#3776ab', color: 'white' }}>Code Files</span>
+                                            <span style={{ backgroundColor: '#f7df1e', color: 'black' }}>JSON/Config</span>
+                                            <span style={{ backgroundColor: '#007acc', color: 'white' }}>Documentation</span>
+                                            <span style={{ backgroundColor: '#ed8b00', color: 'white' }}>Data Files</span>
+                                            <span style={{ backgroundColor: '#00599c', color: 'white' }}>Scripts</span>
+                                            <span style={{ backgroundColor: '#00add8', color: 'white' }}>Logs</span>
+                                            <span style={{ backgroundColor: '#dea584', color: 'black' }}>Markdown</span>
+                                            <span style={{ backgroundColor: '#777bb4', color: 'white' }}>XML/YAML</span>
+                                            <span style={{ backgroundColor: '#cc342d', color: 'white' }}>CSV/TSV</span>
+                                            <span style={{ backgroundColor: '#fa7343', color: 'white' }}>Text Files</span>
+                                            <span style={{ backgroundColor: '#239120', color: 'white' }}>Archives</span>
+                                            <span style={{ backgroundColor: '#7f52ff', color: 'white' }}>Any Text</span>
                                         </div>
-                                        <div className="category-group">
-                                            <strong>Configuration:</strong> JSON, YAML, TOML, INI, XML, ENV files
-                                        </div>
-                                        <div className="category-group">
-                                            <strong>Documentation:</strong> Markdown, RST, TXT, README files
-                                        </div>
-                                        <div className="category-group">
-                                            <strong>Data:</strong> CSV, TSV, LOG, SQL, SPARQL, GraphQL
-                                        </div>
-                                        <div className="category-group">
-                                            <strong>Archives:</strong> ZIP, TAR, GZ files for codebase analysis
-                                        </div>
-                                        <div className="category-group">
-                                            <strong>Universal:</strong> ANY text-based file that contains readable content
+
+                                        <div className="categories">
+                                            <div className="category-group">
+                                                <strong>Programming:</strong> Python, JavaScript, Java, C/C++, Go, Rust, PHP, Ruby, Swift, Kotlin, and 50+ more
+                                            </div>
+                                            <div className="category-group">
+                                                <strong>Configuration:</strong> JSON, YAML, TOML, INI, XML, ENV files
+                                            </div>
+                                            <div className="category-group">
+                                                <strong>Documentation:</strong> Markdown, RST, TXT, README files
+                                            </div>
+                                            <div className="category-group">
+                                                <strong>Data:</strong> CSV, TSV, LOG, SQL, SPARQL, GraphQL
+                                            </div>
+                                            <div className="category-group">
+                                                <strong>Archives:</strong> ZIP, TAR, GZ files for codebase analysis
+                                            </div>
+                                            <div className="category-group">
+                                                <strong>Universal:</strong> ANY text-based file that contains readable content
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            ) : (
+                                /* Repository Scanning Form */
+                                <div className="repository-scan-form">
+                                    <div className="upload-area">
+                                        <Code2 size={48} />
+                                        <h2>Scan Repository for Security Vulnerabilities</h2>
+                                        <p>Analyze entire repositories from GitHub, GitLab, or Bitbucket</p>
+
+                                        <div className="repo-input-group">
+                                            <div className="input-field">
+                                                <label htmlFor="repo-url">Repository URL</label>
+                                                <input
+                                                    type="url"
+                                                    id="repo-url"
+                                                    placeholder="https://github.com/username/repository"
+                                                    value={repoUrl}
+                                                    onChange={(e) => setRepoUrl(e.target.value)}
+                                                    className="repo-input"
+                                                />
+                                            </div>
+                                            <div className="input-field">
+                                                <label htmlFor="repo-branch">Branch (optional)</label>
+                                                <input
+                                                    type="text"
+                                                    id="repo-branch"
+                                                    placeholder="main"
+                                                    value={repoBranch}
+                                                    onChange={(e) => setRepoBranch(e.target.value)}
+                                                    className="repo-input"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={handleRepositoryScan}
+                                                className="scan-repo-btn"
+                                                disabled={!repoUrl.trim()}
+                                            >
+                                                <Shield size={20} />
+                                                Scan Repository
+                                            </button>
+                                        </div>
+
+                                        <div className="supported-repos">
+                                            <p><strong>Supported Platforms:</strong></p>
+                                            <div className="repo-platforms">
+                                                <span className="platform-badge github">GitHub</span>
+                                                <span className="platform-badge gitlab">GitLab</span>
+                                                <span className="platform-badge bitbucket">Bitbucket</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Selected Files Preview */}
+                            {selectedFiles.length > 0 && !analysisState.isAnalyzing && (
+                                <div className="selected-files">
+                                    <h3>Selected Files ({selectedFiles.length})</h3>
+                                    <div className="files-list">
+                                        {selectedFiles.map((file, index) => {
+                                            const languageInfo = getLanguageInfo(file.name);
+                                            return (
+                                                <div key={index} className="file-preview">
+                                                    <div className="file-info">
+                                                        <span className="file-name">{file.name}</span>
+                                                        <span
+                                                            className="language-badge"
+                                                            style={{ backgroundColor: languageInfo.color }}
+                                                        >
+                                                            {languageInfo.name}
+                                                        </span>
+                                                        <span className="file-size">
+                                                            {(file.size / 1024).toFixed(1)}KB
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="file-actions">
+                                        <button
+                                            onClick={() => setSelectedFiles([])}
+                                            className="clear-files-btn"
+                                        >
+                                            Clear All
+                                        </button>
+                                        <button
+                                            onClick={() => handleFileUpload(selectedFiles)}
+                                            className="analyze-files-btn"
+                                        >
+                                            <Shield size={16} />
+                                            Analyze {selectedFiles.length} Files
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             {analysisState.error && (
                                 <div className="error-message">
@@ -476,8 +971,8 @@ function App() {
                         <div className="analysis-progress">
                             <div className="progress-content">
                                 <div className="spinner"></div>
-                                <h2>Analyzing Your Code</h2>
-                                <p>AI is scanning for security vulnerabilities across all file types and content...</p>
+                                <h2>Analyzing {scanMode === 'repository' ? 'Repository' : 'Your Files'}</h2>
+                                <p>AI is scanning {scanMode === 'repository' ? 'the repository' : selectedFiles.length > 0 ? `${selectedFiles.length} files` : 'your files'} for security vulnerabilities across all file types and content...</p>
 
                                 <div className="progress-bar">
                                     <div
@@ -606,15 +1101,44 @@ function App() {
                                     <h3>Risk Assessment</h3>
                                     <div className="risk-meter">
                                         {(() => {
-                                            const critical = analysisState.results.summary?.critical_count || 0;
-                                            const high = analysisState.results.summary?.high_count || 0;
-                                            const medium = analysisState.results.summary?.medium_count || 0;
+                                            // Get actual vulnerability counts from results
+                                            const critical = analysisState.results.summary?.critical_count ||
+                                                analysisState.results.results?.files?.reduce((count, file) =>
+                                                    count + (file.analysis.vulnerabilities?.filter(v => v.severity === 'CRITICAL').length || 0), 0) || 0;
+                                            const high = analysisState.results.summary?.high_count ||
+                                                analysisState.results.results?.files?.reduce((count, file) =>
+                                                    count + (file.analysis.vulnerabilities?.filter(v => v.severity === 'HIGH').length || 0), 0) || 0;
+                                            const medium = analysisState.results.summary?.medium_count ||
+                                                analysisState.results.results?.files?.reduce((count, file) =>
+                                                    count + (file.analysis.vulnerabilities?.filter(v => v.severity === 'MEDIUM').length || 0), 0) || 0;
+                                            const low = analysisState.results.summary?.low_count ||
+                                                analysisState.results.results?.files?.reduce((count, file) =>
+                                                    count + (file.analysis.vulnerabilities?.filter(v => v.severity === 'LOW').length || 0), 0) || 0;
 
-                                            const riskScore = (critical * 10) + (high * 5) + (medium * 2);
-                                            const riskLevel = riskScore > 50 ? 'HIGH' : riskScore > 20 ? 'MEDIUM' : riskScore > 5 ? 'LOW' : 'MINIMAL';
-                                            const riskColor = riskLevel === 'HIGH' ? '#dc3545' :
-                                                riskLevel === 'MEDIUM' ? '#fd7e14' :
-                                                    riskLevel === 'LOW' ? '#ffc107' : '#28a745';
+                                            // Use the same logic as backend for consistency
+                                            let riskLevel;
+                                            if (critical > 0) {
+                                                riskLevel = 'CRITICAL';
+                                            } else if (critical === 0 && high >= 2) {
+                                                riskLevel = 'HIGH';
+                                            } else if (critical === 0 && high === 1 && medium >= 3) {
+                                                riskLevel = 'HIGH';
+                                            } else if (critical === 0 && high === 1) {
+                                                riskLevel = 'MEDIUM';
+                                            } else if (critical === 0 && high === 0 && medium >= 5) {
+                                                riskLevel = 'MEDIUM';
+                                            } else if (critical === 0 && high === 0 && medium >= 2) {
+                                                riskLevel = 'LOW';
+                                            } else if (critical === 0 && high === 0 && medium === 1 && low >= 3) {
+                                                riskLevel = 'LOW';
+                                            } else {
+                                                riskLevel = 'MINIMAL';
+                                            }
+
+                                            const riskColor = riskLevel === 'CRITICAL' ? '#dc2626' :
+                                                riskLevel === 'HIGH' ? '#dc3545' :
+                                                    riskLevel === 'MEDIUM' ? '#fd7e14' :
+                                                        riskLevel === 'LOW' ? '#ffc107' : '#28a745';
 
                                             return (
                                                 <>
@@ -622,10 +1146,11 @@ function App() {
                                                         {riskLevel}
                                                     </div>
                                                     <div className="risk-description">
-                                                        {riskLevel === 'HIGH' && 'Immediate attention required'}
-                                                        {riskLevel === 'MEDIUM' && 'Several issues need fixing'}
-                                                        {riskLevel === 'LOW' && 'Minor improvements suggested'}
-                                                        {riskLevel === 'MINIMAL' && 'Good security posture'}
+                                                        {riskLevel === 'CRITICAL' && '🚨 URGENT: Critical vulnerabilities require immediate action'}
+                                                        {riskLevel === 'HIGH' && '⚡ HIGH: Immediate attention required - fix within 24-48 hours'}
+                                                        {riskLevel === 'MEDIUM' && '⚠️ MEDIUM: Several issues need fixing - plan remediation'}
+                                                        {riskLevel === 'LOW' && '📋 LOW: Minor improvements suggested'}
+                                                        {riskLevel === 'MINIMAL' && '✅ MINIMAL: Good security posture'}
                                                     </div>
                                                 </>
                                             );
