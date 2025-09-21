@@ -68,7 +68,7 @@ class GeminiSecurityAnalyzer:
 
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
         # Language-specific security prompts
         self.language_prompts = self._initialize_language_prompts()

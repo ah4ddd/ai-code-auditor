@@ -16,11 +16,19 @@ import asyncio
 from datetime import datetime
 import shutil
 from dotenv import load_dotenv
+from pydantic import BaseModel
+import requests  # <-- MISSING IMPORT ADDED
+import time     # <-- MISSING IMPORT ADDED
 
 from app.services.gemini_analyzer import GeminiSecurityAnalyzer
 from app.utils.file_handler import FileHandler
 from app.services.github_integration import GitHubIntegration
 from app.tasks.repository_tasks import scan_repository_task
+
+class RepositoryRequest(BaseModel):
+    repo_url: str
+    branch: str = "main"
+    github_token: str = None
 
 # Load environment variables
 load_dotenv()
@@ -28,6 +36,13 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
     print("❌ GEMINI_API_KEY not found in environment variables!")
+    exit(1)
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+github_integration = GitHubIntegration(GITHUB_TOKEN)
+
+if not GITHUB_TOKEN:
+    print("⚠️ GITHUB_TOKEN not found. Public repositories only.")
     exit(1)
 
 app = FastAPI(
@@ -445,21 +460,110 @@ async def analyze_repository_background(
     branch: str,
     github_token: str = None
 ):
-    """Background repository analysis without Celery"""
+    """Enhanced repository analysis with intelligent rate limiting and retry logic"""
 
     temp_dir = None
 
+    # Rate limiting configuration
+    REQUESTS_PER_MINUTE = 12  # Conservative for free tier (actual limit ~15)
+    REQUESTS_PER_DAY = 1200   # Conservative for free tier (actual limit ~1500)
+    MIN_DELAY_SECONDS = 5     # Minimum delay between requests
+    MAX_RETRIES = 3           # Retry failed requests
+    BACKOFF_MULTIPLIER = 2    # Exponential backoff
+
+    # Track API usage (in production, use Redis/database)
+    request_timestamps = []
+    daily_request_count = 0
+
+    def can_make_request():
+        """Check if we can make an API request based on rate limits"""
+        nonlocal request_timestamps, daily_request_count
+
+        current_time = time.time()
+
+        # Clean old timestamps (older than 1 minute)
+        request_timestamps = [ts for ts in request_timestamps if current_time - ts < 60]
+
+        # Check per-minute limit
+        if len(request_timestamps) >= REQUESTS_PER_MINUTE:
+            return False, f"Rate limit: {len(request_timestamps)}/{REQUESTS_PER_MINUTE} requests in last minute"
+
+        # Check daily limit (simplified - in production, use proper day tracking)
+        if daily_request_count >= REQUESTS_PER_DAY:
+            return False, f"Daily limit reached: {daily_request_count}/{REQUESTS_PER_DAY} requests today"
+
+        return True, "OK"
+
+    def record_request():
+        """Record that we made an API request"""
+        nonlocal request_timestamps, daily_request_count
+        request_timestamps.append(time.time())
+        daily_request_count += 1
+
+    async def smart_api_call(analyzer, code_content, filename, language, file_index, total_files):
+        """Make API call with intelligent rate limiting and retries"""
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                # Check if we can make the request
+                can_request, reason = can_make_request()
+                if not can_request:
+                    print(f"   ⏳ Waiting due to rate limit: {reason}")
+                    # Calculate smart delay
+                    if "per minute" in reason:
+                        delay = 65  # Wait for minute window to reset
+                    else:
+                        delay = 3600  # Wait for hour if daily limit (simplified)
+
+                    await asyncio.sleep(delay)
+                    continue
+
+                # Calculate smart delay before request
+                if request_timestamps:
+                    time_since_last = time.time() - request_timestamps[-1]
+                    if time_since_last < MIN_DELAY_SECONDS:
+                        delay_needed = MIN_DELAY_SECONDS - time_since_last
+                        print(f"   ⏱️  Smart delay: {delay_needed:.1f}s before analyzing {filename}")
+                        await asyncio.sleep(delay_needed)
+
+                print(f"   📄 Analyzing {filename} ({file_index}/{total_files}) - Attempt {attempt + 1}")
+
+                # Make the API call
+                result = analyzer.analyze_code(code_content, filename, language)
+                record_request()
+
+                if result.get('error'):
+                    print(f"   ❌ Analysis failed: {result['message']}")
+                    return None
+                else:
+                    print(f"   ✅ Analysis complete: Found {len(result.get('vulnerabilities', []))} issues")
+                    return result
+
+            except requests.exceptions.HTTPError as e:
+                if "429" in str(e):  # Rate limit error
+                    backoff_delay = MIN_DELAY_SECONDS * (BACKOFF_MULTIPLIER ** attempt)
+                    print(f"   ⚠️ Rate limited - backing off {backoff_delay}s (attempt {attempt + 1}/{MAX_RETRIES})")
+                    await asyncio.sleep(backoff_delay)
+                    continue
+                else:
+                    print(f"   ❌ HTTP error: {str(e)}")
+                    return None
+            except Exception as e:
+                print(f"   ❌ Unexpected error: {str(e)}")
+                if attempt == MAX_RETRIES - 1:
+                    return None
+                await asyncio.sleep(2)  # Brief delay before retry
+
+        print(f"   ❌ Failed to analyze {filename} after {MAX_RETRIES} attempts")
+        return None
+
     try:
         print(f"🔍 Starting repository analysis: {repo_url}")
-
-        # Update progress
-        analysis_storage[analysis_id]['progress'] = 10
+        analysis_storage[analysis_id]['progress'] = 5
 
         # Clone repository
         temp_dir, repo_name = await github_integration.clone_repository(repo_url, branch)
-
-        # Update progress
-        analysis_storage[analysis_id]['progress'] = 30
+        analysis_storage[analysis_id]['progress'] = 15
 
         # Discover files
         files = await github_integration.discover_files(temp_dir)
@@ -469,48 +573,44 @@ async def analyze_repository_background(
             analysis_storage[analysis_id]['results'] = {
                 'files': [],
                 'overall_summary': {
-                    'total_vulnerabilities': 0,
-                    'critical_count': 0,
-                    'high_count': 0,
-                    'medium_count': 0,
-                    'low_count': 0,
-                    'info_count': 0,
-                    'total_files_analyzed': 0,
-                    'languages_detected': []
+                    'total_vulnerabilities': 0, 'critical_count': 0, 'high_count': 0,
+                    'medium_count': 0, 'low_count': 0, 'info_count': 0,
+                    'total_files_analyzed': 0, 'languages_detected': []
                 }
             }
             analysis_storage[analysis_id]['progress'] = 100
             return
 
-        print(f"📁 Found {len(files)} files to analyze")
+        print(f"📁 Found {len(files)} files to analyze with smart rate limiting")
+        analysis_storage[analysis_id]['progress'] = 25
 
-        # Update progress
-        analysis_storage[analysis_id]['progress'] = 50
-
-        # Analyze files
+        # Analyze files with intelligent rate limiting
         results = []
         total_vulns = 0
         severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
         languages_found = set()
 
+        successful_analyses = 0
+
         for i, file_info in enumerate(files):
             try:
                 # Update progress
-                progress = 50 + int((i / len(files)) * 40)  # 50-90%
+                progress = 25 + int((i / len(files)) * 65)  # 25-90%
                 analysis_storage[analysis_id]['progress'] = progress
-
-                print(f"   📄 Analyzing {file_info['filename']} ({i+1}/{len(files)})")
 
                 # Read file content
                 content = await github_integration.get_file_content(file_info['full_path'])
-
                 if len(content.strip()) < 10:
                     continue
 
-                # Analyze with Gemini
-                result = analyzer.analyze_code(content, file_info['filename'], file_info['language'])
+                # Make smart API call with rate limiting
+                result = await smart_api_call(
+                    analyzer, content, file_info['filename'],
+                    file_info['language'], i + 1, len(files)
+                )
 
-                if not result.get('error'):
+                if result:
+                    successful_analyses += 1
                     results.append({
                         'filename': file_info['path'],
                         'analysis': result
@@ -529,21 +629,18 @@ async def analyze_repository_background(
                     if file_info['language']:
                         languages_found.add(file_info['language'])
 
-                # Rate limiting
-                await asyncio.sleep(1)
-
             except Exception as file_error:
                 print(f"   ⚠️ Failed to analyze {file_info['filename']}: {str(file_error)}")
                 continue
 
-        # Update progress
+        # Final progress update
         analysis_storage[analysis_id]['progress'] = 95
 
         # Compile final results
         final_results = {
             'files': results,
             'overall_summary': {
-                'total_files_analyzed': len(results),
+                'total_files_analyzed': successful_analyses,
                 'total_files_discovered': len(files),
                 'total_vulnerabilities': total_vulns,
                 'critical_count': severity_counts['critical'],
@@ -551,7 +648,9 @@ async def analyze_repository_background(
                 'medium_count': severity_counts['medium'],
                 'low_count': severity_counts['low'],
                 'info_count': severity_counts['info'],
-                'languages_detected': list(languages_found)
+                'languages_detected': list(languages_found),
+                'api_requests_used': daily_request_count,
+                'success_rate': f"{(successful_analyses/len(files)*100):.1f}%" if files else "0%"
             }
         }
 
@@ -560,6 +659,8 @@ async def analyze_repository_background(
         analysis_storage[analysis_id]['progress'] = 100
 
         print(f"✅ Repository analysis completed: {total_vulns} vulnerabilities found")
+        print(f"📊 Success rate: {successful_analyses}/{len(files)} files analyzed")
+        print(f"🔄 API requests used: {daily_request_count}")
 
     except Exception as e:
         print(f"❌ Repository analysis failed: {str(e)}")
@@ -683,7 +784,7 @@ def generate_recommendations(summary: Dict) -> List[str]:
         recommendations.append("📋 Plan remediation for MEDIUM severity issues in next development cycle")
 
     if critical + high + medium > 0:
-        recommendations.append("🔄 Implement automated security scanning in CI/CD pipeline")
+        recommendations.append("🔥 Implement automated security scanning in CI/CD pipeline")
         recommendations.append("📚 Conduct security code review training for development team")
 
     if len(recommendations) == 0:
@@ -696,19 +797,16 @@ def generate_recommendations(summary: Dict) -> List[str]:
 # ============================================================================
 # REPOSITORY SCANNING ENDPOINTS
 # ============================================================================
-
 @app.post("/api/analyze/repository")
 async def analyze_repository(
     background_tasks: BackgroundTasks,
-    repo_url: str,
-    branch: str = "main",
-    github_token: str = None
+    request: RepositoryRequest  # <-- Changed from individual parameters to single request object
 ):
     """Analyze entire repository for security vulnerabilities"""
 
     try:
         # Validate repository URL
-        if not repo_url or not any(domain in repo_url for domain in ['github.com', 'gitlab.com', 'bitbucket.org']):
+        if not request.repo_url or not any(domain in request.repo_url for domain in ['github.com', 'gitlab.com', 'bitbucket.org']):
             raise HTTPException(
                 status_code=400,
                 detail="Invalid repository URL. Supported: GitHub, GitLab, Bitbucket"
@@ -716,7 +814,7 @@ async def analyze_repository(
 
         # Get repository information
         try:
-            repo_info = await github_integration.get_repository_info(repo_url)
+            repo_info = await github_integration.get_repository_info(request.repo_url)
         except Exception as e:
             raise HTTPException(
                 status_code=400,
@@ -726,19 +824,16 @@ async def analyze_repository(
         # Create analysis job
         analysis_id = str(uuid.uuid4())
 
-        # For now, run repository scanning synchronously (without Celery)
-        # In production, you would use: task = scan_repository_task.delay(repo_url, branch, github_token)
-
         # Store analysis record
         analysis_storage[analysis_id] = {
             'id': analysis_id,
             'type': 'repository',
-            'repo_url': repo_url,
-            'branch': branch,
+            'repo_url': request.repo_url,
+            'branch': request.branch,
             'repo_info': repo_info,
             'status': AnalysisStatus.PROCESSING,
             'created_at': datetime.now().isoformat(),
-            'task_id': None,  # No Celery task for now
+            'task_id': None,
             'results': None,
             'error': None,
             'progress': 0
@@ -748,9 +843,9 @@ async def analyze_repository(
         background_tasks.add_task(
             analyze_repository_background,
             analysis_id,
-            repo_url,
-            branch,
-            github_token
+            request.repo_url,
+            request.branch,
+            request.github_token
         )
 
         print(f"🚀 Repository analysis started: {repo_info['name']} (ID: {analysis_id})")
@@ -760,7 +855,7 @@ async def analyze_repository(
             'status': 'processing',
             'message': f'Repository analysis started for {repo_info["name"]}',
             'repository': repo_info['name'],
-            'branch': branch,
+            'branch': request.branch,
             'languages': repo_info['languages'],
             'estimated_time': f'{repo_info["size"] // 1000} seconds'
         })
@@ -927,7 +1022,7 @@ def generate_repository_recommendations(summary: Dict) -> List[str]:
         recommendations.append("📋 Plan remediation for MEDIUM severity issues in next development cycle")
 
     if critical + high + medium > 0:
-        recommendations.append("🔄 Implement automated security scanning in CI/CD pipeline")
+        recommendations.append("🔥 Implement automated security scanning in CI/CD pipeline")
         recommendations.append("📚 Conduct security code review training for development team")
         recommendations.append("🛡️ Consider implementing static analysis tools like SonarQube or Checkmarx")
 
