@@ -1,13 +1,14 @@
 # backend/app/services/gemini_analyzer.py
 """
-Enhanced AI Code Security Analyzer supporting multiple programming languages
-FIXED VERSION - Language-specific vulnerability detection with specialized prompts
+Enhanced AI Code Security Analyzer with Multi-Model Failover Support
+Automatically switches between Gemini models when quotas are exhausted
 """
 
 import json
 import requests
 import time
 import re
+import os
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -63,15 +64,102 @@ class Vulnerability:
     fix_suggestion: str
     confidence: float
 
+class GeminiModel:
+    """Represents a single Gemini model with its configuration"""
+    def __init__(self, name: str, url: str, daily_limit: int):
+        self.name = name
+        self.url = url
+        self.daily_limit = daily_limit
+        self.requests_used = 0
+        self.last_reset = time.time()
+        self.is_exhausted = False
+        self.last_error = None
+
+    def can_make_request(self) -> bool:
+        """Check if this model can handle a request"""
+        # Reset daily counter if it's a new day
+        if time.time() - self.last_reset > 86400:  # 24 hours
+            self.requests_used = 0
+            self.is_exhausted = False
+            self.last_reset = time.time()
+            print(f"🔄 Daily quota reset for {self.name}")
+
+        return not self.is_exhausted and self.requests_used < self.daily_limit
+
+    def record_request(self):
+        """Record that a request was made"""
+        self.requests_used += 1
+
+    def mark_exhausted(self, error_message: str = None):
+        """Mark this model as exhausted"""
+        self.is_exhausted = True
+        self.last_error = error_message
+        print(f"❌ Model {self.name} exhausted: {error_message}")
+
+    def get_status(self) -> dict:
+        """Get current status of this model"""
+        return {
+            'name': self.name,
+            'requests_used': self.requests_used,
+            'daily_limit': self.daily_limit,
+            'is_exhausted': self.is_exhausted,
+            'can_make_request': self.can_make_request(),
+            'usage_percentage': (self.requests_used / self.daily_limit) * 100
+        }
+
 class GeminiSecurityAnalyzer:
-    """Enhanced security analyzer with multi-language support - FIXED VERSION"""
+    """Enhanced security analyzer with multi-model failover support"""
 
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
-        # Language-specific security prompts
+        # Initialize multiple Gemini models with failover support (best quality first)
+        self.models = [
+            GeminiModel(
+                name="Gemini 2.0 Flash",
+                url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+                daily_limit=200  # Premium quality, lowest limit
+            ),
+            GeminiModel(
+                name="Gemini 1.5 Pro",
+                url="https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+                  daily_limit=50  # Highest quality among 1.5, but very limited quota
+             ),
+            GeminiModel(
+                name="Gemini 1.5 Flash",
+                url="https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+                daily_limit=1500  # Good quality, medium limit
+            ),
+            GeminiModel(
+                name="Gemini 1.5 Flash 8B",
+                url="https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent",
+                daily_limit=4000  # Basic quality, highest limit
+            )
+        ]
+
+        self.current_model_index = 0  # Start with best model (2.0 Flash)
         self.language_prompts = self._initialize_language_prompts()
+
+    def get_available_model(self) -> Optional[GeminiModel]:
+        """Get the next available model for analysis"""
+        # Try current model first (priority to quality)
+        if self.models[self.current_model_index].can_make_request():
+            return self.models[self.current_model_index]
+
+        # Try all other models in order of quality
+        for i, model in enumerate(self.models):
+            if model.can_make_request():
+                if i != self.current_model_index:
+                    self.current_model_index = i
+                    print(f"🔄 Switching to {model.name} (Usage: {model.requests_used}/{model.daily_limit})")
+                return model
+
+        # No models available
+        return None
+
+    def get_models_status(self) -> List[dict]:
+        """Get status of all models"""
+        return [model.get_status() for model in self.models]
 
     def _initialize_language_prompts(self) -> Dict[str, str]:
         """Initialize language-specific security analysis prompts"""
@@ -293,11 +381,19 @@ Focus on high-confidence vulnerabilities only."""
 
     def analyze_code(self, code_content: str, filename: str, language: str = None) -> Dict:
         """
-        Enhanced code analysis with language-specific prompts - FIXED VERSION
+        Enhanced code analysis with automatic model failover
         """
         print(f"🔍 Analyzing {filename} ({len(code_content.split())} words of {language or 'detecting'} code)")
 
-        # Detect language if not provided - FIXED VERSION
+        # Get available model (prioritizes best quality first)
+        model = self.get_available_model()
+        if not model:
+            return self._create_error_response(
+                "All Gemini models have exceeded their quotas. Please wait for quota reset or upgrade to paid tier.",
+                self._get_quota_status()
+            )
+
+        # Detect language if not provided
         if not language:
             language = self._detect_language(filename, code_content)
 
@@ -308,7 +404,7 @@ Focus on high-confidence vulnerabilities only."""
         numbered_code = self._add_line_numbers(code_content)
 
         # Truncate very long files to avoid token limits
-        if len(numbered_code) > 15000:  # About 3000 tokens
+        if len(numbered_code) > 15000:
             lines = numbered_code.split('\n')
             numbered_code = '\n'.join(lines[:200]) + '\n... [File truncated for analysis] ...'
             print(f"   📄 File truncated to first 200 lines for analysis")
@@ -317,91 +413,123 @@ Focus on high-confidence vulnerabilities only."""
         full_prompt = f"{prompt}\n\nCODE TO ANALYZE:\n```{language}\n{numbered_code}\n```\n\nReturn only the JSON response:"
 
         payload = {
-            "contents": [
-                {
-                    "parts": [{"text": full_prompt}],
-                    "role": "user"
-                }
-            ],
+            "contents": [{
+                "parts": [{"text": full_prompt}],
+                "role": "user"
+            }],
             "generationConfig": {
-                "temperature": 0.1,  # Low temperature for consistent analysis
+                "temperature": 0.1,
                 "maxOutputTokens": 2000,
                 "topP": 0.8,
                 "topK": 40
             }
         }
 
-        try:
-            print(f"🤖 Sending {language} code to Gemini for analysis...")
+        # Try to make request with automatic failover
+        max_model_attempts = len(self.models)
+        for model_attempt in range(max_model_attempts):
+            try:
+                print(f"🤖 Sending {language} code to {model.name} for analysis...")
 
-            response = requests.post(
-                self.base_url,
-                headers={
-                    'Content-Type': 'application/json',
-                    'X-goog-api-key': self.api_key
-                },
-                json=payload,
-                timeout=45  # Increased timeout
-            )
+                response = requests.post(
+                    model.url,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-goog-api-key': self.api_key
+                    },
+                    json=payload,
+                    timeout=45
+                )
 
-            response.raise_for_status()
-            result = response.json()
+                # Check for quota exhaustion
+                if response.status_code == 429:
+                    error_data = response.json() if response.content else {}
+                    error_message = error_data.get('error', {}).get('message', 'Rate limit exceeded')
 
-            if 'candidates' in result and result['candidates']:
-                gemini_response = result['candidates'][0]['content']['parts'][0]['text']
+                    # Mark current model as exhausted
+                    model.mark_exhausted(f"Quota exceeded: {error_message}")
 
-                # Enhanced JSON extraction
-                json_match = re.search(r'\{.*\}', gemini_response, re.DOTALL)
-                if json_match:
-                    try:
-                        analysis_result = json.loads(json_match.group())
+                    # Try to get another model
+                    model = self.get_available_model()
+                    if not model:
+                        return self._create_error_response(
+                            "All models exhausted. Please wait for quota reset.",
+                            self._get_quota_status()
+                        )
 
-                        # Validate required fields
-                        if 'vulnerabilities' not in analysis_result:
-                            analysis_result['vulnerabilities'] = []
-                        if 'summary' not in analysis_result:
-                            analysis_result['summary'] = {
-                                'total_vulnerabilities': len(analysis_result['vulnerabilities']),
-                                'critical_count': 0,
-                                'high_count': 0,
-                                'medium_count': 0,
-                                'low_count': 0,
-                                'info_count': 0
+                    print(f"🔄 Auto-switching to {model.name} due to quota exhaustion")
+                    continue
+
+                response.raise_for_status()
+                result = response.json()
+
+                # Record successful request
+                model.record_request()
+
+                if 'candidates' in result and result['candidates']:
+                    gemini_response = result['candidates'][0]['content']['parts'][0]['text']
+
+                    # Enhanced JSON extraction
+                    json_match = re.search(r'\{.*\}', gemini_response, re.DOTALL)
+                    if json_match:
+                        try:
+                            analysis_result = json.loads(json_match.group())
+
+                            # Validate required fields
+                            if 'vulnerabilities' not in analysis_result:
+                                analysis_result['vulnerabilities'] = []
+                            if 'summary' not in analysis_result:
+                                analysis_result['summary'] = {
+                                    'total_vulnerabilities': len(analysis_result['vulnerabilities']),
+                                    'critical_count': 0, 'high_count': 0, 'medium_count': 0,
+                                    'low_count': 0, 'info_count': 0
+                                }
+
+                            # Add metadata with model info
+                            analysis_result['metadata'] = {
+                                'filename': filename,
+                                'language': language,
+                                'analyzed_at': time.time(),
+                                'code_length': len(code_content),
+                                'model_used': model.name,
+                                'model_requests_used': model.requests_used,
+                                'tokens_used': result.get('usageMetadata', {}).get('totalTokenCount', 0),
+                                'analysis_version': '2.1_failover'
                             }
 
-                        # Add metadata
-                        analysis_result['metadata'] = {
-                            'filename': filename,
-                            'language': language,
-                            'analyzed_at': time.time(),
-                            'code_length': len(code_content),
-                            'gemini_tokens_used': result.get('usageMetadata', {}).get('totalTokenCount', 0),
-                            'analysis_version': '2.0'
-                        }
+                            vuln_count = len(analysis_result.get('vulnerabilities', []))
+                            print(f"✅ Analysis complete with {model.name}! Found {vuln_count} potential issues")
+                            return analysis_result
 
-                        vuln_count = len(analysis_result.get('vulnerabilities', []))
-                        print(f"✅ Analysis complete! Found {vuln_count} potential issues")
-                        return analysis_result
-
-                    except json.JSONDecodeError as e:
-                        print(f"❌ JSON parsing error: {str(e)}")
-                        return self._create_error_response("Invalid JSON response from Gemini", gemini_response[:500])
+                        except json.JSONDecodeError as e:
+                            print(f"❌ JSON parsing error: {str(e)}")
+                            return self._create_error_response("Invalid JSON response from Gemini", gemini_response[:500])
+                    else:
+                        print("❌ No JSON found in Gemini response")
+                        return self._create_error_response("No JSON found in response", gemini_response[:500])
                 else:
-                    print("❌ No JSON found in Gemini response")
-                    return self._create_error_response("No JSON found in response", gemini_response[:500])
-            else:
-                print("❌ No candidates in Gemini response")
-                return self._create_error_response("No response candidates from Gemini API", str(result))
+                    print("❌ No candidates in Gemini response")
+                    return self._create_error_response("No response candidates from Gemini API", str(result))
 
-        except requests.exceptions.Timeout:
-            print("❌ Gemini API timeout")
-            return self._create_error_response("Analysis timeout - file may be too large")
-        except requests.exceptions.RequestException as e:
-            print(f"❌ API request failed: {str(e)}")
-            return self._create_error_response(f"API request failed: {str(e)}")
-        except Exception as e:
-            print(f"❌ Unexpected error: {str(e)}")
-            return self._create_error_response(f"Unexpected error: {str(e)}")
+            except requests.exceptions.Timeout:
+                print(f"❌ {model.name} API timeout")
+                return self._create_error_response(f"Analysis timeout with {model.name}")
+            except requests.exceptions.RequestException as e:
+                print(f"❌ API request failed with {model.name}: {str(e)}")
+                return self._create_error_response(f"API request failed: {str(e)}")
+            except Exception as e:
+                print(f"❌ Unexpected error with {model.name}: {str(e)}")
+                return self._create_error_response(f"Unexpected error: {str(e)}")
+
+        return self._create_error_response("All model attempts failed")
+
+    def _get_quota_status(self) -> str:
+        """Get formatted quota status for all models"""
+        status_lines = ["Model Quota Status:"]
+        for model in self.models:
+            status = model.get_status()
+            status_lines.append(f"- {status['name']}: {status['requests_used']}/{status['daily_limit']} ({status['usage_percentage']:.1f}%)")
+        return "\n".join(status_lines)
 
     def _detect_language(self, filename: str, code_content: str) -> str:
         """Detect programming language from filename and content - FIXED VERSION"""
@@ -470,19 +598,17 @@ Focus on high-confidence vulnerabilities only."""
         return '\n'.join(numbered_lines)
 
     def _create_error_response(self, error_message: str, raw_response: str = "") -> Dict:
-        """Create standardized error response"""
+        """Create standardized error response with model status"""
         return {
             'error': True,
             'message': error_message,
             'raw_response': raw_response,
+            'models_status': self.get_models_status(),
             'vulnerabilities': [],
             'summary': {
                 'total_vulnerabilities': 0,
-                'critical_count': 0,
-                'high_count': 0,
-                'medium_count': 0,
-                'low_count': 0,
-                'info_count': 0
+                'critical_count': 0, 'high_count': 0, 'medium_count': 0,
+                'low_count': 0, 'info_count': 0
             }
         }
 
