@@ -30,6 +30,14 @@ class RepositoryRequest(BaseModel):
     branch: str = "main"
     github_token: str = None
 
+class WebhookPayload(BaseModel):
+    event: str
+    repo_url: str
+    branch: str = "main"
+    base_ref: str | None = None
+    head_ref: str | None = None
+    github_token: str | None = None
+
 # Load environment variables
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -54,8 +62,8 @@ app = FastAPI(
 # Enhanced CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"],
-    allow_credentials=True,
+    allow_origins=["*"],  # widen for dev to fix preflight failures from differing hosts
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -309,6 +317,21 @@ async def get_analysis_results(analysis_id: str):
             'total_time': calculate_total_time(analysis)
         }
     }
+
+@app.post("/api/webhook/github")
+async def github_webhook(payload: WebhookPayload):
+    """Trigger repository scan from GitHub webhook events (push/PR)."""
+    try:
+        task = scan_repository_task.delay(
+            payload.repo_url,
+            payload.branch or "main",
+            payload.github_token,
+            payload.base_ref,
+            payload.head_ref
+        )
+        return {"status": "queued", "task_id": task.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
 # ENHANCED BACKGROUND ANALYSIS TASKS

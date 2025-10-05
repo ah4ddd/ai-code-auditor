@@ -1,4 +1,51 @@
 """
+Lightweight context analyzer utilities to extract simple import graphs for Python and JS.
+"""
+import os
+import re
+from typing import Dict, List, Set, Tuple
+
+
+class ContextAnalyzer:
+    def build_import_graph(self, files: List[Dict]) -> Dict[str, List[str]]:
+        graph: Dict[str, List[str]] = {}
+        for f in files:
+            language = (f.get("language") or "").lower()
+            path = f.get("full_path") or f.get("path")
+            rel = f.get("path") or f.get("filename")
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    content = fh.read()
+                deps: List[str] = []
+                if language in {"python"}:
+                    deps = self._extract_python_imports(content)
+                elif language in {"javascript", "typescript"}:
+                    deps = self._extract_js_imports(content)
+                graph[rel] = deps
+            except Exception:
+                graph[rel] = []
+        return graph
+
+    def _extract_python_imports(self, code: str) -> List[str]:
+        deps: Set[str] = set()
+        for m in re.finditer(r"^(?:from\s+([\w\.]+)\s+import|import\s+([\w\.]+))", code, re.MULTILINE):
+            pkg = m.group(1) or m.group(2)
+            if pkg:
+                deps.add(pkg.split(".")[0])
+        return sorted(deps)
+
+    def _extract_js_imports(self, code: str) -> List[str]:
+        deps: Set[str] = set()
+        # import x from 'pkg'; import 'pkg'; const x = require('pkg')
+        for m in re.finditer(r"import\s+(?:[^'\"]+from\s+)?['\"]([^'\"]+)['\"]", code):
+            deps.add(m.group(1))
+        for m in re.finditer(r"require\(\s*['\"]([^'\"]+)['\"]\s*\)", code):
+            deps.add(m.group(1))
+        return sorted(deps)
+
+"""
 Static Analysis Pre-filter
 Fast pattern-based vulnerability detection before AI analysis
 """
@@ -10,7 +57,7 @@ import base64
 
 class StaticAnalyzer:
     """Static analysis for common vulnerability patterns"""
-    
+
     def __init__(self):
         # Common API key patterns
         self.api_key_patterns = [
@@ -22,14 +69,14 @@ class StaticAnalyzer:
             r'pk_[a-zA-Z0-9]{20,}',
             r'[a-zA-Z0-9]{32,}',
         ]
-        
+
         # Password patterns
         self.password_patterns = [
             r'["\']?password["\']?\s*[:=]\s*["\']([^"\']+)["\']',
             r'["\']?pwd["\']?\s*[:=]\s*["\']([^"\']+)["\']',
             r'["\']?pass["\']?\s*[:=]\s*["\']([^"\']+)["\']',
         ]
-        
+
         # Database connection patterns
         self.db_patterns = [
             r'["\']?database["\']?\s*[:=]\s*["\']([^"\']+)["\']',
@@ -37,7 +84,7 @@ class StaticAnalyzer:
             r'["\']?db[_-]?user["\']?\s*[:=]\s*["\']([^"\']+)["\']',
             r'["\']?db[_-]?pass["\']?\s*[:=]\s*["\']([^"\']+)["\']',
         ]
-        
+
         # Dangerous function calls
         self.dangerous_functions = {
             'python': [
@@ -57,7 +104,7 @@ class StaticAnalyzer:
             'c': ['system', 'exec', 'popen'],
             'cpp': ['system', 'exec', 'popen'],
         }
-        
+
         # SQL injection patterns
         self.sql_patterns = [
             r'SELECT\s+.*\s+FROM\s+.*\s+WHERE\s+.*\+.*',
@@ -65,54 +112,54 @@ class StaticAnalyzer:
             r'UPDATE\s+.*\s+SET\s+.*\+.*',
             r'DELETE\s+FROM\s+.*\s+WHERE\s+.*\+.*',
         ]
-        
+
         # XSS patterns
         self.xss_patterns = [
             r'innerHTML\s*=\s*[^;]+',
             r'document\.write\s*\([^)]+\)',
             r'\.html\s*\([^)]+\)',
         ]
-    
+
     def analyze_file(self, content: str, filename: str, language: str) -> Dict:
         """
         Analyze file for common vulnerability patterns
         """
         vulnerabilities = []
         lines = content.split('\n')
-        
+
         # Check for hardcoded secrets
         vulnerabilities.extend(self._check_hardcoded_secrets(content, lines))
-        
+
         # Check for dangerous function calls
         vulnerabilities.extend(self._check_dangerous_functions(content, lines, language))
-        
+
         # Check for SQL injection patterns
         vulnerabilities.extend(self._check_sql_injection(content, lines))
-        
+
         # Check for XSS patterns
         vulnerabilities.extend(self._check_xss_patterns(content, lines))
-        
+
         # Check for weak cryptography
         vulnerabilities.extend(self._check_weak_crypto(content, lines))
-        
+
         # Check for insecure deserialization
         vulnerabilities.extend(self._check_insecure_deserialization(content, lines, language))
-        
+
         # Check for path traversal
         vulnerabilities.extend(self._check_path_traversal(content, lines))
-        
+
         # Check for command injection
         vulnerabilities.extend(self._check_command_injection(content, lines, language))
-        
+
         # Calculate summary
         total_vulns = len(vulnerabilities)
         severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
-        
+
         for vuln in vulnerabilities:
             severity = vuln.get("severity", "").lower()
             if severity in severity_counts:
                 severity_counts[severity] += 1
-        
+
         return {
             "vulnerabilities": vulnerabilities,
             "critical_issues": severity_counts["critical"] > 0,
@@ -125,16 +172,16 @@ class StaticAnalyzer:
                 "info_count": severity_counts["info"]
             }
         }
-    
+
     def _check_hardcoded_secrets(self, content: str, lines: List[str]) -> List[Dict]:
         """Check for hardcoded API keys, passwords, and secrets"""
         vulnerabilities = []
-        
+
         for pattern in self.api_key_patterns:
             for match in re.finditer(pattern, content, re.IGNORECASE):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "HARDCODED_SECRETS",
@@ -145,12 +192,12 @@ class StaticAnalyzer:
                     "confidence": 0.95,
                     "detection_method": "static_pattern"
                 })
-        
+
         for pattern in self.password_patterns:
             for match in re.finditer(pattern, content, re.IGNORECASE):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "HARDCODED_CREDENTIALS",
@@ -161,23 +208,23 @@ class StaticAnalyzer:
                     "confidence": 0.90,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities
-    
+
     def _check_dangerous_functions(self, content: str, lines: List[str], language: str) -> List[Dict]:
         """Check for dangerous function calls"""
         vulnerabilities = []
-        
+
         dangerous_funcs = self.dangerous_functions.get(language.lower(), [])
-        
+
         for func in dangerous_funcs:
             pattern = rf'\b{re.escape(func)}\s*\('
             for match in re.finditer(pattern, content):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 severity = "CRITICAL" if func in ['eval', 'exec', 'system'] else "HIGH"
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "DANGEROUS_FUNCTION",
@@ -188,18 +235,18 @@ class StaticAnalyzer:
                     "confidence": 0.85,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities
-    
+
     def _check_sql_injection(self, content: str, lines: List[str]) -> List[Dict]:
         """Check for SQL injection patterns"""
         vulnerabilities = []
-        
+
         for pattern in self.sql_patterns:
             for match in re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "SQL_INJECTION",
@@ -210,18 +257,18 @@ class StaticAnalyzer:
                     "confidence": 0.80,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities
-    
+
     def _check_xss_patterns(self, content: str, lines: List[str]) -> List[Dict]:
         """Check for XSS patterns"""
         vulnerabilities = []
-        
+
         for pattern in self.xss_patterns:
             for match in re.finditer(pattern, content):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "XSS",
@@ -232,13 +279,13 @@ class StaticAnalyzer:
                     "confidence": 0.75,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities
-    
+
     def _check_weak_crypto(self, content: str, lines: List[str]) -> List[Dict]:
         """Check for weak cryptographic practices"""
         vulnerabilities = []
-        
+
         weak_crypto_patterns = [
             (r'MD5\s*\(', "MD5", "CRITICAL"),
             (r'SHA1\s*\(', "SHA1", "HIGH"),
@@ -246,12 +293,12 @@ class StaticAnalyzer:
             (r'RC4\s*\(', "RC4", "HIGH"),
             (r'random\s*\(', "Weak random", "MEDIUM"),
         ]
-        
+
         for pattern, algo, severity in weak_crypto_patterns:
             for match in re.finditer(pattern, content, re.IGNORECASE):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "WEAK_CRYPTO",
@@ -262,27 +309,27 @@ class StaticAnalyzer:
                     "confidence": 0.90,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities
-    
+
     def _check_insecure_deserialization(self, content: str, lines: List[str], language: str) -> List[Dict]:
         """Check for insecure deserialization"""
         vulnerabilities = []
-        
+
         deserialization_patterns = {
             'python': [r'pickle\.loads?\s*\(', r'yaml\.load\s*\('],
             'java': [r'ObjectInputStream', r'readObject\s*\('],
             'php': [r'unserialize\s*\(', r'json_decode\s*\('],
             'javascript': [r'JSON\.parse\s*\(', r'eval\s*\('],
         }
-        
+
         patterns = deserialization_patterns.get(language.lower(), [])
-        
+
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.IGNORECASE):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "INSECURE_DESERIALIZATION",
@@ -293,25 +340,25 @@ class StaticAnalyzer:
                     "confidence": 0.85,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities
-    
+
     def _check_path_traversal(self, content: str, lines: List[str]) -> List[Dict]:
         """Check for path traversal vulnerabilities"""
         vulnerabilities = []
-        
+
         path_patterns = [
             r'\.\./',
             r'\.\.\\',
             r'%2e%2e%2f',
             r'%2e%2e%5c',
         ]
-        
+
         for pattern in path_patterns:
             for match in re.finditer(pattern, content, re.IGNORECASE):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "PATH_TRAVERSAL",
@@ -322,27 +369,27 @@ class StaticAnalyzer:
                     "confidence": 0.80,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities
-    
+
     def _check_command_injection(self, content: str, lines: List[str], language: str) -> List[Dict]:
         """Check for command injection vulnerabilities"""
         vulnerabilities = []
-        
+
         command_patterns = {
             'python': [r'os\.system\s*\(', r'subprocess\.call\s*\(', r'subprocess\.run\s*\('],
             'php': [r'system\s*\(', r'exec\s*\(', r'shell_exec\s*\('],
             'javascript': [r'eval\s*\(', r'Function\s*\('],
             'java': [r'Runtime\.getRuntime\(\)\.exec\s*\('],
         }
-        
+
         patterns = command_patterns.get(language.lower(), [])
-        
+
         for pattern in patterns:
             for match in re.finditer(pattern, content, re.IGNORECASE):
                 line_num = content[:match.start()].count('\n') + 1
                 line_content = lines[line_num - 1] if line_num <= len(lines) else ""
-                
+
                 vulnerabilities.append({
                     "line_number": line_num,
                     "vulnerability_type": "COMMAND_INJECTION",
@@ -353,5 +400,5 @@ class StaticAnalyzer:
                     "confidence": 0.90,
                     "detection_method": "static_pattern"
                 })
-        
+
         return vulnerabilities

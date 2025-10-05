@@ -7,14 +7,18 @@ from app.celery_app import celery_app
 from app.services.github_integration import GitHubIntegration
 from app.services.gemini_analyzer import GeminiSecurityAnalyzer
 from app.utils.file_handler import FileHandler
+from app.services.dependency_scanner import DependencyScanner
+from app.services.risk_scorer import RiskScorer
+from app.services.slack_notifier import SlackNotifier
 import os
 import json
 import asyncio
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 from datetime import datetime
 
 @celery_app.task(bind=True, name="scan_repository")
-def scan_repository_task(self, repo_url: str, branch: str = "main", github_token: str = None):
+def scan_repository_task(self, repo_url: str, branch: str = "main", github_token: str = None,
+                         base_ref: Optional[str] = None, head_ref: Optional[str] = None):
     """
     Main repository scanning task
     """
@@ -24,31 +28,43 @@ def scan_repository_task(self, repo_url: str, branch: str = "main", github_token
             state="PROGRESS",
             meta={"status": "Initializing", "progress": 0, "message": "Starting repository scan"}
         )
-        
+
         # Initialize services
         github_integration = GitHubIntegration(github_token)
         gemini_analyzer = GeminiSecurityAnalyzer(os.getenv("GEMINI_API_KEY"))
         file_handler = FileHandler()
-        
+
         temp_dir = None
-        
+
         try:
             # Step 1: Clone repository
             self.update_state(
                 state="PROGRESS",
                 meta={"status": "Cloning", "progress": 10, "message": f"Cloning repository from {repo_url}"}
             )
-            
+
             temp_dir, repo_name = asyncio.run(github_integration.clone_repository(repo_url, branch))
-            
+
             # Step 2: Discover files
             self.update_state(
                 state="PROGRESS",
                 meta={"status": "Discovering", "progress": 20, "message": "Discovering analyzable files"}
             )
-            
+
             files = asyncio.run(github_integration.discover_files(temp_dir))
-            
+
+            # If incremental requested, filter to changed files only
+            changed_rel_paths: Optional[List[str]] = None
+            if base_ref and head_ref:
+                self.update_state(
+                    state="PROGRESS",
+                    meta={"status": "Diffing", "progress": 22, "message": f"Finding changes {base_ref}..{head_ref}"}
+                )
+                changed_rel_paths = asyncio.run(github_integration.discover_changed_files(temp_dir, base_ref, head_ref))
+                if changed_rel_paths:
+                    changed_set: Set[str] = set(changed_rel_paths)
+                    files = [f for f in files if f.get("path") in changed_set]
+
             if not files:
                 return {
                     "status": "completed",
@@ -63,17 +79,27 @@ def scan_repository_task(self, repo_url: str, branch: str = "main", github_token
                             "low_count": 0,
                             "info_count": 0,
                             "total_files_analyzed": 0,
-                            "languages_detected": []
+                            "languages_detected": [],
+                            "repo_score": 0,
+                            "dependency_summary": {"dependency_risk_score": 0, "vulnerabilities": []}
                         }
                     }
                 }
-            
+
+            # Step 2.5: Dependency scan
+            self.update_state(
+                state="PROGRESS",
+                meta={"status": "Dependency Scan", "progress": 25, "message": "Scanning dependencies via OSV"}
+            )
+            dep_scanner = DependencyScanner()
+            dependency_summary = dep_scanner.scan_repository_manifests(temp_dir)
+
             # Step 3: Analyze files in parallel
             self.update_state(
                 state="PROGRESS",
                 meta={"status": "Analyzing", "progress": 30, "message": f"Analyzing {len(files)} files"}
             )
-            
+
             # Create file analysis tasks
             file_tasks = []
             for i, file_info in enumerate(files):
@@ -84,11 +110,11 @@ def scan_repository_task(self, repo_url: str, branch: str = "main", github_token
                     file_info["path"]
                 )
                 file_tasks.append((task, file_info))
-            
+
             # Wait for all file analyses to complete
             results = []
             total_files = len(file_tasks)
-            
+
             for i, (task, file_info) in enumerate(file_tasks):
                 try:
                     # Update progress
@@ -101,31 +127,46 @@ def scan_repository_task(self, repo_url: str, branch: str = "main", github_token
                             "message": f"Analyzing {file_info['filename']} ({i+1}/{total_files})"
                         }
                     )
-                    
+
                     # Get result
                     result = task.get(timeout=300)  # 5 minute timeout per file
-                    
+
                     if result and not result.get("error"):
                         results.append({
                             "filename": file_info["path"],
                             "analysis": result
                         })
-                    
+
                 except Exception as e:
                     print(f"❌ Failed to analyze {file_info['filename']}: {str(e)}")
                     continue
-            
-            # Step 4: Aggregate results
+
+            # Step 4: Aggregate results with scoring
             self.update_state(
                 state="PROGRESS",
                 meta={"status": "Aggregating", "progress": 90, "message": "Aggregating results"}
             )
-            
+
             aggregated_results = aggregate_repository_results(results, files)
-            
+
+            # Compute per-file and repo scores
+            scorer = RiskScorer()
+            for fr in aggregated_results.get("files", []):
+                fr["file_score"] = scorer.score_file(fr.get("analysis", {}))
+
+            repo_score = scorer.score_repository(aggregated_results.get("files", []),
+                                                 dependency_summary.get("dependency_risk_score", 0))
+
+            aggregated_results["overall_summary"]["repo_score"] = repo_score
+            aggregated_results["overall_summary"]["dependency_summary"] = {
+                "dependency_risk_score": dependency_summary.get("dependency_risk_score", 0),
+                "vulnerabilities": dependency_summary.get("vulnerabilities", []),
+                "manifests": dependency_summary.get("manifests", [])
+            }
+
             # Step 5: Cleanup
             asyncio.run(github_integration.cleanup_repository(temp_dir))
-            
+
             # Final result
             self.update_state(
                 state="SUCCESS",
@@ -135,8 +176,8 @@ def scan_repository_task(self, repo_url: str, branch: str = "main", github_token
                     "message": f"Repository scan completed. Found {aggregated_results['overall_summary']['total_vulnerabilities']} vulnerabilities"
                 }
             )
-            
-            return {
+
+            result_payload = {
                 "status": "completed",
                 "repository": repo_name,
                 "branch": branch,
@@ -149,18 +190,28 @@ def scan_repository_task(self, repo_url: str, branch: str = "main", github_token
                     "branch": branch
                 }
             }
-            
+
+            # Optional Slack alert for critical findings
+            try:
+                notifier = SlackNotifier()
+                if notifier.is_configured():
+                    notifier.send_critical_findings(repo_name, aggregated_results.get("overall_summary", {}))
+            except Exception:
+                pass
+
+            return result_payload
+
         except Exception as e:
             # Cleanup on error
             if temp_dir:
                 asyncio.run(github_integration.cleanup_repository(temp_dir))
-            
+
             self.update_state(
                 state="FAILURE",
                 meta={"status": "Failed", "message": str(e)}
             )
             raise e
-            
+
     except Exception as e:
         self.update_state(
             state="FAILURE",
@@ -177,13 +228,13 @@ def analyze_file_task(self, file_path: str, filename: str, language: str, relati
         # Read file content
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         # Analyze with Gemini
         gemini_analyzer = GeminiSecurityAnalyzer(os.getenv("GEMINI_API_KEY"))
         result = gemini_analyzer.analyze_code(content, filename, language)
-        
+
         return result
-        
+
     except Exception as e:
         return {"error": str(e), "filename": filename}
 
@@ -195,30 +246,30 @@ def aggregate_repository_results(file_results: List[Dict], all_files: List[Dict]
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
     languages_found = set()
     vulnerability_types = {}
-    
+
     for file_result in file_results:
         analysis = file_result.get("analysis", {})
         vulnerabilities = analysis.get("vulnerabilities", [])
-        
+
         # Count vulnerabilities by severity
         for vuln in vulnerabilities:
             severity = vuln.get("severity", "").lower()
             if severity in severity_counts:
                 severity_counts[severity] += 1
                 total_vulnerabilities += 1
-            
+
             # Track vulnerability types
             vuln_type = vuln.get("vulnerability_type", "UNKNOWN")
             vulnerability_types[vuln_type] = vulnerability_types.get(vuln_type, 0) + 1
-        
+
         # Track languages
         metadata = analysis.get("metadata", {})
         if metadata.get("language"):
             languages_found.add(metadata["language"])
-    
+
     # Calculate risk level
     risk_level = calculate_repository_risk_level(severity_counts)
-    
+
     return {
         "files": file_results,
         "overall_summary": {
@@ -232,7 +283,10 @@ def aggregate_repository_results(file_results: List[Dict], all_files: List[Dict]
             "total_files_discovered": len(all_files),
             "languages_detected": list(languages_found),
             "vulnerability_types": vulnerability_types,
-            "risk_level": risk_level
+            "risk_level": risk_level,
+            # Placeholders to be filled by caller when available
+            "repo_score": 0,
+            "dependency_summary": {"dependency_risk_score": 0, "vulnerabilities": [], "manifests": []}
         }
     }
 
@@ -244,7 +298,7 @@ def calculate_repository_risk_level(severity_counts: Dict) -> str:
     high = severity_counts.get("high", 0)
     medium = severity_counts.get("medium", 0)
     low = severity_counts.get("low", 0)
-    
+
     if critical > 0:
         return "CRITICAL"
     elif critical == 0 and high >= 5:

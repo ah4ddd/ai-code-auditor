@@ -49,5 +49,18 @@ celery_app.conf.update(
 # Task result configuration
 celery_app.conf.result_expires = 3600  # 1 hour
 
+# Optional rate limits via environment variables for large repos
+REPO_RATE = os.getenv("CELERY_REPOSITORY_RATE_LIMIT")  # e.g., "2/m" or "10/s"
+FILE_RATE = os.getenv("CELERY_FILE_RATE_LIMIT")
+
+annotations = {}
+if REPO_RATE:
+    annotations["app.tasks.repository_tasks.*"] = {"rate_limit": REPO_RATE}
+if FILE_RATE:
+    annotations["app.tasks.file_analysis_tasks.*"] = {"rate_limit": FILE_RATE}
+
+if annotations:
+    celery_app.conf.task_annotations = annotations
+
 if __name__ == "__main__":
     celery_app.start()

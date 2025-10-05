@@ -13,6 +13,7 @@ import git
 from datetime import datetime
 import asyncio
 import aiofiles
+from typing import Optional
 
 class GitHubIntegration:
     """GitHub repository integration for security analysis"""
@@ -192,6 +193,19 @@ class GitHubIntegration:
         except Exception as e:
             print(f"❌ File discovery failed: {str(e)}")
             raise Exception(f"File discovery failed: {str(e)}")
+
+    async def discover_changed_files(self, repo_path: str, base_ref: str, head_ref: str) -> List[str]:
+        """
+        Return list of changed file paths (relative) between base_ref..head_ref
+        """
+        try:
+            repo = git.Repo(repo_path)
+            diff_output = repo.git.diff("--name-only", f"{base_ref}..{head_ref}")
+            files = [line.strip() for line in diff_output.split("\n") if line.strip()]
+            return files
+        except Exception as e:
+            print(f"❌ discover_changed_files failed: {e}")
+            return []
 
     async def get_file_content(self, file_path: str) -> str:
         """
