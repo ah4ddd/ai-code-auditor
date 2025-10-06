@@ -1937,3 +1937,37 @@ pre {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* Platform Logos - Clean Minimal Style */
+.platform-logos-clean {
+    display: flex;
+    gap: 2.5rem;
+    justify-content: center;
+    align-items: center;
+    margin: 1.5rem 0 2rem 0;
+}
+
+.platform-icon {
+    fill: var(--text-secondary);
+    opacity: 0.6;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: default;
+}
+
+.platform-icon:hover {
+    opacity: 1;
+    fill: var(--primary);
+    transform: translateY(-4px) scale(1.1);
+    filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.3));
+}
+
+@media (max-width: 768px) {
+    .platform-logos-clean {
+        gap: 1.5rem;
+    }
+
+    .platform-icon {
+        width: 28px;
+        height: 28px;
+    }
+}
